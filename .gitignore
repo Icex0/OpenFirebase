@@ -1,0 +1,33 @@
+.DS_Store
+/openfirebase.egg-info
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+/build
+/jadx
+/openfirebase/jadx
+/results
+openfirebase/tools/apksigner.jar

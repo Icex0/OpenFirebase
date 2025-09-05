@@ -1,0 +1,1 @@
+OpenFirebase - Unauth Firebase write access found

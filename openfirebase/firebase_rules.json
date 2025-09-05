@@ -1,0 +1,55 @@
+{
+  "description": "Firebase pattern rules for extraction - group(0) to match the entire string and group(1) to match the content inside the first parentheses",
+  "patterns": {
+    "Firebase_Project_ID": {
+      "pattern": "<string name=\"project_id\">([a-z0-9-]+)</string>",
+      "description": "Firebase project ID from strings.xml",
+      "capture_group": 1
+    },
+    "Google_API_Key": {
+      "pattern": "<string name=\"google_api_key\">([A-Za-z0-9_-]+)</string>",
+      "description": "Google API key from strings.xml",
+      "capture_group": 1
+    },
+    "Other_Google_API_Key": {
+      "pattern": "<string name=\"[^\"]*\">(AIza[A-Za-z0-9_-]+)</string>",
+      "description": "Other Google API keys starting with AIza from strings.xml",
+      "capture_group": 1
+    },
+    "Google_App_ID": {
+      "pattern": "<string name=\"google_app_id\">([0-9]+:[0-9]+:[a-z]+:[a-f0-9]+)</string>",
+      "description": "Google App ID from strings.xml",
+      "capture_group": 1
+    },
+    "Firebase_Database_US": {
+      "pattern": "([a-z0-9-]+)\\.firebaseio\\.com/?[^\\s\"'<>]*",
+      "description": "Firebase Realtime Database URLs (US region) - captures project ID",
+      "capture_group": 0
+    },
+    "Firebase_Database_Other": {
+      "pattern": "([a-z0-9-]+)\\.[a-z0-9-]+\\.firebasedatabase\\.app/?[^\\s\"'<>]*",
+      "description": "Firebase Realtime Database URLs (other regions) - captures project ID",
+      "capture_group": 0
+    },
+    "Firebase_Storage_New": {
+      "pattern": "([a-z0-9-]+)\\.firebasestorage\\.app/?[^\\s\"'<>]*",
+      "description": "Firebase Storage URLs (new domain) - captures project ID",
+      "capture_group": 0
+    },
+    "Firebase_Storage_Old": {
+      "pattern": "([a-z0-9]+(?:-[a-z0-9]+)*)(?:\\.[a-z0-9-]+)?(?:\\.r)?\\.appspot\\.com",
+      "description": "Firebase Storage URLs (old appspot domain) - captures project ID",
+      "capture_group": 0
+    },
+    "Firebase_Storage_API": {
+      "pattern": "firebasestorage\\.googleapis\\.com/v0/b/([a-z0-9-]+)\\.appspot\\.com/?[^\\s\"'<>]*",
+      "description": "Firebase Storage bucket API - captures project ID",
+      "capture_group": 0
+    },
+    "Firestore_Collection_Name": {
+      "pattern": "\\w*collection\\(\\s*[\"'`]([^\\n\\r\"'`]+?)[\"'`]",
+      "description": "Firestore collection names from Java code",
+      "capture_group": 1
+    }
+  }
+}
