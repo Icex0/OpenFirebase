@@ -28,7 +28,7 @@ class SignatureExtractor:
         # Import colors from config
         from ..core.config import BLUE, RED, RESET
 
-        # Install in OpenFirebase package directory (like JADX)
+        # Install in OpenFirebase tools directory
         package_dir = Path(__file__).parent.parent  # openfirebase/ directory
         tools_dir = package_dir / "tools"
         apksigner_path = tools_dir / "apksigner.jar"

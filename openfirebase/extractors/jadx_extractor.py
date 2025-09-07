@@ -70,12 +70,13 @@ class JADXExtractor:
         if system_jadx:
             return system_jadx
 
-        # Fallback to local installation path
-        local_jadx_dir = os.path.join(str(Path(self.main_dir).parent), "jadx", "bin")
+        # Fallback to local installation path in tools directory (within package)
+        package_dir = Path(self.main_dir).parent  # openfirebase/ directory
+        tools_dir = package_dir / "tools" / "jadx" / "bin"
         if os.name == "nt":  # Windows
-            return os.path.join(local_jadx_dir, "jadx.bat").replace("\\", "/")
+            return str(tools_dir / "jadx.bat").replace("\\", "/")
         # Unix-like systems
-        return os.path.join(local_jadx_dir, "jadx").replace("\\", "/")
+        return str(tools_dir / "jadx").replace("\\", "/")
 
     def _check_jadx_availability(self) -> bool:
         """Check if JADX is available at the specified path."""
@@ -94,7 +95,9 @@ class JADXExtractor:
     def _download_jadx(self) -> bool:
         """Download and install JADX from GitHub releases."""
         jadx_url = JADX_DOWNLOAD_URL
-        install_dir = os.path.join(str(Path(self.main_dir).parent), "jadx")
+        # Install in tools directory for consistency with other tools
+        package_dir = Path(self.main_dir).parent  # openfirebase/ directory
+        install_dir = str(package_dir / "tools" / "jadx")
 
         try:
             print(f"{BLUE}[INF]{RESET} Downloading JADX v{JADX_VERSION}...")

@@ -51,5 +51,6 @@ openfirebase = [
     "firebase_rules.json",
     "wordlist/*.txt", 
     "payloads/*.txt",
-    "payloads/*.json"
+    "payloads/*.json",
+    "tools/*"
 ]

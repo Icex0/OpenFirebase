@@ -5,6 +5,7 @@ Handles the main application workflow and coordinates different components.
 
 import multiprocessing
 import signal
+import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor, TimeoutError, as_completed
 from pathlib import Path
@@ -42,6 +43,19 @@ class OpenFirebaseOrchestrator:
     def __init__(self):
         self.run_timestamp = generate_timestamp()
 
+    def _check_java_availability(self):
+        """Check if Java is available for JADX and apksigner tools."""
+        try:
+            # Try to run java -version to check if Java is installed
+            result = subprocess.run(
+                ["java", "-version"], 
+                capture_output=True, 
+                text=True, 
+                timeout=10
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return False
 
 
     def run_with_args(self, args):
@@ -52,10 +66,17 @@ class OpenFirebaseOrchestrator:
         # Check for androguard dependency
         if not ANDROGUARD_AVAILABLE:
             print(
-                "Error: androguard is required but not available. "
+                f"{RED}[ERROR]{RESET} androguard is required but not available. "
                 "Try reinstalling with: pipx reinstall openfirebase"
             )
             return 1
+
+        # Check for Java availability for JADX and apksigner tools
+        if not self._check_java_availability():
+            print(
+                f"{RED}[ERROR]{RESET} Java is not installed or not available in PATH. "
+                "JADX decompilation and remote config scanning will not work without Java. "
+            )
 
         try:
             # Determine number of processes for APK processing
@@ -298,7 +319,7 @@ class OpenFirebaseOrchestrator:
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
             print(
-                f"{BLUE}[INF]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id."
+                f"{ORANGE}[WARNING]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id."
             )
 
         # Parse project IDs (comma-separated)
@@ -373,7 +394,7 @@ class OpenFirebaseOrchestrator:
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
             print(
-                f"{BLUE}[INF]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id-file."
+                f"{ORANGE}[WARNING]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id-file."
             )
 
         # Read project IDs from file
