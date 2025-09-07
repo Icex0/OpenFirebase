@@ -90,9 +90,9 @@ OpenFirebase uses JADX decompilation by default for source code analysis. This *
 
 - **Automatic Installation**: If JADX is not found, OpenFirebase will automatically download and install JADX.
 - **Fast Alternative**: Use `--fast-extract` to skip JADX decompilation and only parse strings.xml for faster processing
-1. **androguard Parsing**: Uses androguard to extract `/res/values/strings.xml` only
-2. **String Analysis**: Searches for Firebase patterns in XML strings
-3. **Quick Results**: Outputs Firebase URLs and basic configuration found in strings.xml
+1. **androguard Parsing**: Uses androguard to extract string resources from all `/res/values-*` directories (including locale-specific variants)
+2. **String Analysis**: Searches for Firebase patterns in XML strings across all locales
+3. **Quick Results**: Outputs Firebase URLs and basic configuration found in strings.xml files
 4. **Limited Scope**: Does not detect Firestore collections or patterns in Java source code
 
 - **Why use JADX?**: JADX decompilation provides deeper analysis by searching through actual source code, detecting Firestore collections, and finding additional Firebase patterns that strings.xml-only analysis would miss
@@ -164,7 +164,7 @@ When using the `--read-firestore` or `--write-firestore` options, the script wil
 
 When using the `--read-config` option, the script will scan Firebase Remote Config accessibility using extracted Google API keys and App IDs. The scanner:
 
-- Extracts Google API keys and App IDs from `/res/values/strings.xml`
+- Extracts Google API keys and App IDs from string resources across all `/res/values-*` directories
 - Tests Firebase Remote Config API endpoints:
   - `https://firebaseremoteconfig.googleapis.com/v1/projects/{PROJECT_ID}/namespaces/firebase:fetch?key={API_KEY}`
 - Makes POST requests with extracted App IDs

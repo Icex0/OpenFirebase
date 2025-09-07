@@ -46,7 +46,7 @@ class FirebaseExtractor:
         self.results_lock = threading.Lock()  # Thread-safe access to results
 
     def extract_strings_xml_content(self, apk_path: Path) -> str:
-        """Extract string resources from APK using Android resource system."""
+        """Extract string resources from APK using Android resource system, including all locale directories."""
         try:
             # Load the APK
             apk = APK(apk_path)
@@ -54,34 +54,33 @@ class FirebaseExtractor:
             # Get the APK's resources
             resources = apk.get_android_resources()
             if resources:
-                # Get all string resources using the package name
+                # Get all string resources from ALL locales (no package name needed)
                 package_name = apk.get_package()
-                if package_name:
-                    string_resources = resources.get_string_resources(package_name)
-                    if string_resources:
-                        # Found string resources
-                        # Handle different return types from get_string_resources
-                        if isinstance(string_resources, dict):
-                            # Convert to XML-like format for pattern matching
-                            strings_xml_content = "<resources>\n"
-                            for string_id, string_value in string_resources.items():
-                                if isinstance(string_value, str):
-                                    strings_xml_content += f'<string name="{string_id}">{string_value}</string>\n'
-                            strings_xml_content += "</resources>"
+                string_resources = resources.get_strings_resources()
+                if string_resources:
+                    # Found string resources
+                    # Handle different return types from get_strings_resources
+                    if isinstance(string_resources, dict):
+                        # Convert to XML-like format for pattern matching
+                        strings_xml_content = "<resources>\n"
+                        for string_id, string_value in string_resources.items():
+                            if isinstance(string_value, str):
+                                strings_xml_content += f'<string name="{string_id}">{string_value}</string>\n'
+                        strings_xml_content += "</resources>"
+                        # Successfully extracted string resources
+                        return strings_xml_content
+                    if isinstance(string_resources, bytes):
+                        # If it returns bytes, try to decode as XML
+                        try:
+                            strings_xml_content = string_resources.decode("utf-8")
                             # Successfully extracted string resources
                             return strings_xml_content
-                        if isinstance(string_resources, bytes):
-                            # If it returns bytes, try to decode as XML
-                            try:
-                                strings_xml_content = string_resources.decode("utf-8")
-                                # Successfully extracted string resources
-                                return strings_xml_content
-                            except UnicodeDecodeError:
-                                # Could not decode string resources bytes as UTF-8
-                                pass
-                        else:
-                            # Unexpected string_resources type
+                        except UnicodeDecodeError:
+                            # Could not decode string resources bytes as UTF-8
                             pass
+                    else:
+                        # Unexpected string_resources type
+                        pass
 
             # No string resources found
             return ""
