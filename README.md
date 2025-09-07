@@ -86,7 +86,7 @@ OpenFirebase includes built-in wordlists and payloads in the repository. These f
 <details>
 <summary><strong>JADX Decompilation (Default)</strong></summary>
 
-OpenFirebase uses JADX decompilation by default for comprehensive source code analysis:
+OpenFirebase uses JADX decompilation by default for source code analysis. This *Decompiling APK with JADX* phase can take a while, depending on the APK and your system (especially on VMs with limited resources):
 
 - **Automatic Installation**: If JADX is not found, OpenFirebase will automatically download and install JADX.
 - **Fast Alternative**: Use `--fast-extract` to skip JADX decompilation and only parse strings.xml for faster processing
@@ -96,7 +96,7 @@ OpenFirebase uses JADX decompilation by default for comprehensive source code an
 4. **Limited Scope**: Does not detect Firestore collections or patterns in Java source code
 
 - **Why use JADX?**: JADX decompilation provides deeper analysis by searching through actual source code, detecting Firestore collections, and finding additional Firebase patterns that strings.xml-only analysis would miss
-- JADX processing has a 30 minute timeout to prevent hanging (change in config.py). Note: In some cases the JADX process is not killed after 30 minutes and the extraction phase will not complete. Manually kill the correct JADX process that hangs and it will finish the extraction phase (I will fix this!)
+- JADX processing has a 30 minute timeout to prevent hanging (change in config.py). Note: In some cases the JADX process is not killed after 30 minutes and the extraction phase will not complete. Manually kill the correct JADX process that hangs and it will finish the extraction phase (I will fix this!) 
 - Files are processed in order of size (smallest first) so it will take more time towards the end
 
 </details>
@@ -170,9 +170,8 @@ When using the `--read-config` option, the script will scan Firebase Remote Conf
 - Makes POST requests with extracted App IDs
 - Evaluates response status codes:
   - **200**: Remote Config accessible.
-  - **401/403**: Permission denied.
+  - **401/403**: Permission denied. There might be other Google API restrictions.
   - **404**: Remote Config not found.
-  - **429**: Rate limited.
 - **Open-only files**: Automatically creates `*_config_open_only.txt` files when accessible configs are found
 
 </details>
@@ -264,6 +263,8 @@ These options are particularly useful when:
 
 ## Examples
 
+I recommend scanning using --proxy http://127.0.0.1:8080 and Burp Suite with the JWT extension that highlights requests containing JWT tokens. This is especially useful during authenticated scanning, as it makes it easy to identify which requests succeeded. You can then easily test them and export requests as cURL commands, making them easy to reproduce in your PoC.
+
 #### Only extract single file
 ```bash
 # Only extract using JADX (default)
@@ -279,13 +280,13 @@ openfirebase -d path/to/apks -F
 #### Full unauthenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access
-openfirebase -d /path/to/apks --read-all --write-all --write-storage-file payload.txt --write-rtdb-file payload.json --write-firestore-value "unauth_write_check_by_Icex0" --fuzz-collections ./wordlists/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlists/firestore-collections.txt
 ```
 
-#### Full read and write scan with Auth
+#### Full authenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access with authentication
-openfirebase -d /path/to/apks --read-all --write-all --write-storage-file payload.txt --write-rtdb-file payload.json --write-firestore-value "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./wordlists/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlists/firestore-collections.txt
 ```
 
 #### Resume from extraction only results and perform scans
@@ -294,7 +295,7 @@ openfirebase -d /path/to/apks --read-all --write-all --write-storage-file payloa
 openfirebase --resume ./2025-08-31_20-30-00_results --exclude-project-id "abc-project" --read-all
 ```
 
-#### Full read scan using project ID (cert and package name are optional but needed if there are restrictions)
+#### Full read scan using project ID (cert and package name are optional but needed if there are Google API restrictions)
 ```bash
 openfirebase --project-id openfirebase --read-all --check-with-auth --email pentester@company.com --password SecurePass123 --api-key AIz... --cert-sha1 1126abfb2cc0656875e50099d1bb5376276ae5a5 --package-name com.openfire.base --proxy http://127.0.0.1:8080 
 ```
@@ -303,5 +304,4 @@ openfirebase --project-id openfirebase --read-all --check-with-auth --email pent
 
 This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages or other liability, whether in an action of contract, tort or otherwise, arising from, out of or in connection with the software or the use or other dealings in the software.
 
-Use of this tool is at your own risk. Users are responsible for ensuring compliance with all applicable laws and regulations in their jurisdiction. This tool is intended for security professionals and educational purposes only.
-
+This tool is not affiliated with, endorsed by, or associated with Google LLC. This is an independent security research tool designed for legitimate security testing purposes. Use of this tool is at your own risk. Users are responsible for ensuring compliance with all applicable laws and regulations in their jurisdiction.
