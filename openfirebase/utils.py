@@ -420,22 +420,25 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
 
     for package_name, links in results.items():
         main_project_id = None  # From Firebase_Project_ID field
-        google_api_key = None   # From Google_API_Key field
+        explicit_project_ids = []  # Collect Firebase_Project_ID entries in order
+        google_api_keys = []    # Collect ALL Google_API_Key entries in order
         other_api_keys = []     # From Other_Google_API_Key fields
-        app_id = None
+        app_ids = []            # Collect ALL Google_App_ID entries in order
         cert_sha1_list = []     # Collect all SHA-1 certificates
         apk_package_name = None
 
-        # Extract the credentials from the links
+        # Extract ALL credentials from the links, preserving order
         for link_type, link_value in links:
             if link_type == "Firebase_Project_ID":
-                main_project_id = link_value
+                explicit_project_ids.append(link_value)
+                if main_project_id is None:  # First one becomes main
+                    main_project_id = link_value
             elif link_type == "Google_API_Key":
-                google_api_key = link_value
+                google_api_keys.append(link_value)  # Collect ALL API keys in order
             elif link_type == "Other_Google_API_Key":
                 other_api_keys.append(link_value)
             elif link_type == "Google_App_ID":
-                app_id = link_value
+                app_ids.append(link_value)  # Collect ALL App IDs in order
             elif link_type == "APK_Certificate_SHA1":
                 cert_sha1_list.append(link_value)  # Collect all certificates
             elif link_type == "APK_Package_Name":
@@ -443,6 +446,10 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
 
         # Get ALL project IDs from this package (including ones from URLs)
         all_project_ids = ProjectIDExtractor.extract_project_ids_from_urls(links)
+        
+        # Use positional mapping: match by index position
+        # The 1st project ID gets the 1st API key and 1st App ID, etc.
+        explicit_project_list = list(explicit_project_ids)
 
         # Create auth entries for all project IDs found
         for project_id in all_project_ids:
@@ -455,42 +462,68 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                     "package_name": None
                 }
 
-            # Determine which API keys to use for this project
-            if project_id == main_project_id:
-                # This is the main project ID (Firebase_Project_ID)
-                # Use google_api_key if available
-                auth_data[project_id]["main_project_id"] = main_project_id
-                if google_api_key:
-                    auth_data[project_id]["api_keys"] = [google_api_key]
+            # Find the index of this project_id in the explicit list
+            project_index = None
+            try:
+                project_index = explicit_project_list.index(project_id)
+            except ValueError:
+                # Project ID not in explicit list (extracted from URLs)
+                # Assign remaining credentials if any are unused
+                used_indices = set()
+                for existing_pid in auth_data:
+                    if existing_pid in explicit_project_list:
+                        used_indices.add(explicit_project_list.index(existing_pid))
+                
+                # Find first unused index
+                for i in range(max(len(google_api_keys), len(app_ids))):
+                    if i not in used_indices:
+                        project_index = i
+                        break
 
-                # Add additional fields for main project
-                if app_id:
-                    auth_data[project_id]["app_id"] = app_id
-                if cert_sha1_list:
-                    auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
+            # Assign credentials based on positional index
+            if project_index is not None:
+                # Determine which API keys to use for this project
+                if project_id == main_project_id:
+                    # This is the main project ID (Firebase_Project_ID)
+                    # Use google_api_key for main project
+                    auth_data[project_id]["main_project_id"] = main_project_id
+                    if project_index < len(google_api_keys):
+                        auth_data[project_id]["api_keys"] = [google_api_keys[project_index]]
 
-                # Use APK package name if available, otherwise fall back to APK filename
-                if apk_package_name:
-                    auth_data[project_id]["package_name"] = apk_package_name
+                    # Add additional fields for main project
+                    if project_index < len(app_ids):
+                        auth_data[project_id]["app_id"] = app_ids[project_index]
+                    if cert_sha1_list:
+                        auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
+
+                    # Use APK package name if available, otherwise fall back to APK filename
+                    if apk_package_name:
+                        auth_data[project_id]["package_name"] = apk_package_name
+                    else:
+                        auth_data[project_id]["package_name"] = package_name
                 else:
-                    auth_data[project_id]["package_name"] = package_name
-            else:
-                # This is another project ID (not the main Firebase_Project_ID)
-                # Use Other_Google_API_Key keys
-                if other_api_keys:
-                    auth_data[project_id]["api_keys"] = other_api_keys.copy()
+                    # This is another project ID (not the main Firebase_Project_ID)
+                    # Use positional Google_API_Key for non-main projects, fallback to Other_Google_API_Key
+                    api_keys_to_use = []
+                    if project_index < len(google_api_keys):
+                        api_keys_to_use.append(google_api_keys[project_index])
+                    # Also add Other_Google_API_Key keys as fallback options
+                    if other_api_keys:
+                        api_keys_to_use.extend(other_api_keys)
+                    
+                    auth_data[project_id]["api_keys"] = api_keys_to_use
 
-                # Also inherit app_id and certificates for other projects (they can share these)
-                if app_id:
-                    auth_data[project_id]["app_id"] = app_id
-                if cert_sha1_list:
-                    auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
+                    # Also assign app_id positionally for other projects
+                    if project_index < len(app_ids):
+                        auth_data[project_id]["app_id"] = app_ids[project_index]
+                    if cert_sha1_list:
+                        auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
 
-                # Use package name from main project or APK filename
-                if apk_package_name:
-                    auth_data[project_id]["package_name"] = apk_package_name
-                else:
-                    auth_data[project_id]["package_name"] = package_name
+                    # Use package name from main project or APK filename
+                    if apk_package_name:
+                        auth_data[project_id]["package_name"] = apk_package_name
+                    else:
+                        auth_data[project_id]["package_name"] = package_name
 
     return auth_data
 

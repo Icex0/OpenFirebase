@@ -207,12 +207,14 @@ class FirebaseExtractor:
 
     def process_apk(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Process a single APK file and return Firebase items."""
-        package_name = apk_path.stem
         firebase_items = self.extract_from_apk(apk_path)
 
         # Extract APK signature and package name for Remote Config
         from .signature_extractor import SignatureExtractor
         cert_sha1_list, apk_package_name = SignatureExtractor.extract_apk_signature(apk_path)
+
+        # Use real package name if available, otherwise fall back to APK filename
+        package_name = apk_package_name if apk_package_name else apk_path.stem
 
         # Add all SHA-1 certificate information to Firebase items
         for cert_sha1 in cert_sha1_list:

@@ -4,10 +4,8 @@ This module contains the SignatureExtractor class that handles
 extracting SHA-1 certificate hashes and package names from APK files.
 """
 
-import re
 import shutil
 import subprocess
-import zipfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -128,40 +126,16 @@ class SignatureExtractor:
                             if sha1_hash:  # Only add non-empty hashes
                                 sha1_hashes.append(sha1_hash)
 
-            # Extract package name using aapt (if available) or fallback method
+            # Extract package name using androguard (primary method)
             package_name = None
             try:
-                # Try using aapt first (if available)
-                aapt_result = subprocess.run([
-                    "aapt", "dump", "badging", str(apk_path)
-                ], check=False, capture_output=True, text=True, timeout=30)
-
-                if aapt_result.returncode == 0:
-                    for line in aapt_result.stdout.split("\n"):
-                        if line.startswith("package:"):
-                            # Extract package name from: package: name='com.example.app' versionCode='1' ...
-                            match = re.search(r"name='([^']+)'", line)
-                            if match:
-                                package_name = match.group(1)
-                                break
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                # aapt not available, try alternative method using unzip and AndroidManifest.xml
-                try:
-                    # Extract AndroidManifest.xml and parse it (simplified approach)
-                    manifest_result = subprocess.run([
-                        "unzip", "-p", str(apk_path), "AndroidManifest.xml"
-                    ], check=False, capture_output=True, timeout=30)
-
-                    if manifest_result.returncode == 0:
-                        # This is a very basic approach - in practice, you'd need to properly parse the binary XML
-                        # For now, we'll just try to find package name patterns
-                        manifest_data = manifest_result.stdout.decode("utf-8", errors="ignore")
-                        # Look for common package name patterns
-                        package_match = re.search(r"([a-zA-Z][a-zA-Z0-9_]*\.){2,}[a-zA-Z][a-zA-Z0-9_]*", manifest_data)
-                        if package_match:
-                            package_name = package_match.group(0)
-                except (FileNotFoundError, subprocess.TimeoutExpired):
-                    pass
+                # Try using androguard APK.get_package() first
+                from androguard.core.apk import APK
+                apk = APK(apk_path)
+                package_name = apk.get_package()
+            except Exception:
+                # If androguard fails, fall back to APK filename
+                package_name = apk_path.stem
 
             return sha1_hashes, package_name
 

@@ -620,8 +620,14 @@ class JADXExtractor:
 
     def process_file(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Process a single APK file and return Firebase items."""
-        package_name = apk_path.stem
         firebase_items = self.extract_from_apk(apk_path)
+
+        # Extract real package name using androguard
+        from .signature_extractor import SignatureExtractor
+        _, apk_package_name = SignatureExtractor.extract_apk_signature(apk_path)
+        
+        # Use real package name if available, otherwise fall back to APK filename
+        package_name = apk_package_name if apk_package_name else apk_path.stem
 
         if firebase_items:
             with self.results_lock:
@@ -632,8 +638,14 @@ class JADXExtractor:
 
     def process_file_with_progress(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Process a single APK file with progress bar showing file scanning progress."""
-        package_name = apk_path.stem
         firebase_items = self.extract_from_apk_with_progress(apk_path)
+
+        # Extract real package name using androguard
+        from .signature_extractor import SignatureExtractor
+        _, apk_package_name = SignatureExtractor.extract_apk_signature(apk_path)
+        
+        # Use real package name if available, otherwise fall back to APK filename
+        package_name = apk_package_name if apk_package_name else apk_path.stem
 
         if firebase_items:
             with self.results_lock:
