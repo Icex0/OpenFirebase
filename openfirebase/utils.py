@@ -317,19 +317,22 @@ def extract_config_data(results: Dict) -> Dict[str, Dict[str, str]]:
 
     for package_name, links in results.items():
         main_project_id = None  # From Firebase_Project_ID field
-        api_key = None
-        app_id = None
+        explicit_project_ids = []  # Collect Firebase_Project_ID entries in order
+        api_keys = []  # Collect ALL Google API keys in order
+        app_ids = []   # Collect ALL Google App IDs in order
         cert_sha1_list = []  # Collect all SHA-1 certificates
         apk_package_name = None
 
-        # Extract the main credentials from the links
+        # Extract ALL credentials from the links, preserving order
         for link_type, link_value in links:
             if link_type == "Firebase_Project_ID":
-                main_project_id = link_value
+                explicit_project_ids.append(link_value)
+                if main_project_id is None:  # First one becomes main
+                    main_project_id = link_value
             elif link_type == "Google_API_Key":
-                api_key = link_value
+                api_keys.append(link_value)  # Collect ALL API keys in order
             elif link_type == "Google_App_ID":
-                app_id = link_value
+                app_ids.append(link_value)   # Collect ALL App IDs in order
             elif link_type == "APK_Certificate_SHA1":
                 cert_sha1_list.append(link_value)  # Collect all certificates
             elif link_type == "APK_Package_Name":
@@ -337,17 +340,39 @@ def extract_config_data(results: Dict) -> Dict[str, Dict[str, str]]:
 
         # Get ALL project IDs from this package (including ones from URLs)
         all_project_ids = ProjectIDExtractor.extract_project_ids_from_urls(links)
-
-        # Create config entries for all project IDs found
+        
+        # Use positional mapping: match by index position
+        # The 1st project ID gets the 1st API key and 1st App ID, etc.
+        explicit_project_list = list(explicit_project_ids)
+        
         for project_id in all_project_ids:
             if project_id not in config_data:
                 config_data[project_id] = {}
 
-            # Add API key and App ID to all project IDs (they can share these)
-            if api_key:
-                config_data[project_id]["api_key"] = api_key
-            if app_id:
-                config_data[project_id]["app_id"] = app_id
+            # Find the index of this project_id in the explicit list
+            project_index = None
+            try:
+                project_index = explicit_project_list.index(project_id)
+            except ValueError:
+                # Project ID not in explicit list (extracted from URLs)
+                # Assign remaining credentials if any are unused
+                used_indices = set()
+                for existing_pid in config_data:
+                    if existing_pid in explicit_project_list:
+                        used_indices.add(explicit_project_list.index(existing_pid))
+                
+                # Find first unused index
+                for i in range(max(len(api_keys), len(app_ids))):
+                    if i not in used_indices:
+                        project_index = i
+                        break
+
+            # Assign credentials based on positional index
+            if project_index is not None:
+                if project_index < len(api_keys):
+                    config_data[project_id]["api_key"] = api_keys[project_index]
+                if project_index < len(app_ids):
+                    config_data[project_id]["app_id"] = app_ids[project_index]
 
             # Only add certificates and package_name to the main project ID
             # (the one from Firebase_Project_ID field) since certificate is specific to that project

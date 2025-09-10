@@ -45,7 +45,7 @@ class ConfigScanner(BaseScanner):
                 message="Missing API key or App ID",
                 accessible=False,
                 security="MISSING_CONFIG",
-                response_text="Required configuration data not found in APK"
+                response_text="Required configuration data not found in APK. Please check the APK manually."
             )
             return results
 

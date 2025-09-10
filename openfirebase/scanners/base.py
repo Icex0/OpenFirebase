@@ -990,7 +990,7 @@ class BaseScanner(ABC):
             }
         if resource_type == "config":
             return {
-                "public": "Public remote configs found",
+                "public": "Remote configs found",
                 "protected": "Protected remote configs (401/403)",
                 "missing_config": "Missing config data",
                 "no_config": "Apps without Remote Config",
