@@ -562,13 +562,13 @@ class BaseScanner(ABC):
                                     print(f"{YELLOW}[!]{RESET} PUBLIC FIRESTORE DATABASE (AUTHENTICATED) - Database is publicly accessible with authentication, but this collection doesn't exist (use --fuzz-collections)")
                                 else:
                                     # Collection has content
-                                    print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication")
+                                    print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")  # Empty line for readability
                             except (json.JSONDecodeError, ValueError):
                                 # If we can't parse JSON, fall back to generic message
-                                print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication")
+                                print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")  # Empty line for readability
                         else:
                             # Non-Firestore services
-                            print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication")
+                            print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")  # Empty line for readability
                     elif status in ["401", "403"]:
                         print(f"{RED}[-]{RESET} STILL PROTECTED - Resource remains protected even with authentication")
                     elif status == "404":
@@ -1540,28 +1540,32 @@ class BaseScanner(ABC):
             # Determine what services were scanned for the header
             services_scanned = []
             if db_scan_results:
-                services_scanned.append("Databases")
+                services_scanned.append("Realtime Database read")
             if storage_scan_results:
-                services_scanned.append("Storage")
+                services_scanned.append("Storage read")
             if config_scan_results:
-                services_scanned.append("Remote Config")
+                services_scanned.append("Remote Config read")
             if firestore_scan_results:
-                services_scanned.append("Firestore")
+                services_scanned.append("Firestore read")
             if storage_write_results:
                 services_scanned.append("Storage Write")
             if firestore_write_results:
                 services_scanned.append("Firestore Write")
+            if rtdb_write_results:
+                services_scanned.append("Realtime Database write")
 
             header = f"Firebase Combined Scan Results ({' + '.join(services_scanned)})"
             f.write(header + "\n")
             f.write("=" * 80 + "\n\n")
 
             # Database results
+            # Realtime Database results
             if db_scan_results:
                 self._write_scan_results_section(
                     f,
                     db_scan_results,
                     "DATABASE READ RESULTS",
+                    "REALTIME DATABASE READ RESULTS",
                     "database",
                     project_to_packages,
                 )

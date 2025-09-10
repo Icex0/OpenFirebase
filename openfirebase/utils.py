@@ -345,7 +345,12 @@ def extract_config_data(results: Dict) -> Dict[str, Dict[str, str]]:
         # The 1st project ID gets the 1st API key and 1st App ID, etc.
         explicit_project_list = list(explicit_project_ids)
         
-        for project_id in all_project_ids:
+        # Create consistent ordered list: explicit project IDs first (in original order),
+        # then additional project IDs from URLs (sorted for consistency)
+        additional_project_ids = sorted(all_project_ids - set(explicit_project_ids))
+        ordered_project_ids = explicit_project_list + additional_project_ids
+        
+        for project_id in ordered_project_ids:
             if project_id not in config_data:
                 config_data[project_id] = {}
 
@@ -451,8 +456,13 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
         # The 1st project ID gets the 1st API key and 1st App ID, etc.
         explicit_project_list = list(explicit_project_ids)
 
+        # Create consistent ordered list: explicit project IDs first (in original order),
+        # then additional project IDs from URLs (sorted for consistency)
+        additional_project_ids = sorted(all_project_ids - set(explicit_project_ids))
+        ordered_project_ids = explicit_project_list + additional_project_ids
+
         # Create auth entries for all project IDs found
-        for project_id in all_project_ids:
+        for project_id in ordered_project_ids:
             if project_id not in auth_data:
                 auth_data[project_id] = {
                     "main_project_id": None,
