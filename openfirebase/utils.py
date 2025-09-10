@@ -333,6 +333,8 @@ def extract_config_data(results: Dict) -> Dict[str, Dict[str, str]]:
                 api_keys.append(link_value)  # Collect ALL API keys in order
             elif link_type == "Google_App_ID":
                 app_ids.append(link_value)   # Collect ALL App IDs in order
+            elif link_type == "Other_Google_App_ID":
+                app_ids.append(link_value)   # Collect other Google App IDs too
             elif link_type == "APK_Certificate_SHA1":
                 cert_sha1_list.append(link_value)  # Collect all certificates
             elif link_type == "APK_Package_Name":
@@ -444,6 +446,8 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                 other_api_keys.append(link_value)
             elif link_type == "Google_App_ID":
                 app_ids.append(link_value)  # Collect ALL App IDs in order
+            elif link_type == "Other_Google_App_ID":
+                app_ids.append(link_value)  # Collect other Google App IDs too
             elif link_type == "APK_Certificate_SHA1":
                 cert_sha1_list.append(link_value)  # Collect all certificates
             elif link_type == "APK_Package_Name":

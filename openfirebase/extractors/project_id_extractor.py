@@ -48,7 +48,9 @@ class ProjectIDExtractor:
                 if pattern_name in [
                     "Firebase_Project_ID",
                     "Google_API_Key",
+                    "Other_Google_API_Key",
                     "Google_App_ID",
+                    "Other_Google_App_ID",
                     "Firestore_Collection_Name",
                 ]:
                     continue

@@ -382,7 +382,7 @@ def main(
     fast_extract: bool = Option(
         False,
         "-F", "--fast-extract",
-        help="Use fast extraction (strings.xml only) instead of full source analysis. Faster but limited.",
+        help="Use fast extraction (strings.xml from all /res/values-* directories) instead of full source analysis. Faster but limited.",
         rich_help_panel="Input Options"
     ),
     resume: Optional[Path] = Option(

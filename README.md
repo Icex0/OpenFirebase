@@ -76,7 +76,7 @@ pipx install .
 
 #### Default Wordlists and Payloads
 
-OpenFirebase includes built-in wordlists and payloads in the repository. These files must be explicitly specified in command line arguments:
+OpenFirebase includes a built-in firestore collection wordlist and example payloads for write testing. These files must be explicitly specified in command line arguments. Feel free to use your own:
 - Use `--fuzz-collections openfirebase/wordlist/firestore-collections.txt` for collection fuzzing
 - Use `--write-rtdb-file openfirebase/payloads/openfirebase.json` for RTDB write testing
 - Use `--write-storage-file openfirebase/payloads/openfirebase_storage_write_check.txt` for storage write testing
@@ -89,11 +89,7 @@ OpenFirebase includes built-in wordlists and payloads in the repository. These f
 OpenFirebase uses JADX decompilation by default for source code analysis. This *Decompiling APK with JADX* phase can take a while, depending on the APK and your system (especially on VMs with limited resources):
 
 - **Automatic Installation**: If JADX is not found, OpenFirebase will automatically download and install JADX.
-- **Fast Alternative**: Use `--fast-extract` to skip JADX decompilation and only parse strings.xml for faster processing
-1. **androguard Parsing**: Uses androguard to extract string resources from all `/res/values-*` directories (including locale-specific variants)
-2. **String Analysis**: Searches for Firebase patterns in XML strings across all locales
-3. **Quick Results**: Outputs Firebase URLs and basic configuration found in strings.xml files
-4. **Limited Scope**: Does not detect Firestore collections or patterns in Java source code
+- **Fast Alternative**: Use `--fast-extract` to skip JADX decompilation and extract string resources from all `/res/values-*` directories (including locale-specific variants)
 
 - **Why use JADX?**: JADX decompilation provides deeper analysis by searching through actual source code, detecting Firestore collections, and finding additional Firebase patterns that strings.xml-only analysis would miss
 - JADX processing has a 30 minute timeout to prevent hanging (change in config.py). Note: In some cases the JADX process is not killed after 30 minutes and the extraction phase will not complete. Manually kill the correct JADX process that hangs and it will finish the extraction phase (I will fix this!) 
@@ -207,7 +203,7 @@ These options are particularly useful when:
 |----------|-------|-------------|
 | `--file` | `-f` | Single APK file to process with JADX decompilation |
 | `--apk-dir` | `-d` | JADX decompilation on directory containing APK files (*.apk). Recommended for multiple APKs |
-| `--fast-extract` | `-F` | Use fast extraction (strings.xml only) instead of full source analysis. Faster but limited |
+| `--fast-extract` | `-F` | Use fast extraction (strings.xml from all /res/values-* directories) instead of full source analysis. Faster but limited |
 | `--resume` | `-r` | Resume from existing results folder containing *_firebase_items.txt file |
 | `--exclude-project-id` | | Exclude specific project ID(s) when resuming (comma-separated for multiple IDs, can only be used with --resume) |
 | `--project-id` | `-pi` | Scan specific Firebase project ID(s) without extraction (comma-separated for multiple IDs) |

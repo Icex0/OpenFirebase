@@ -1008,9 +1008,6 @@ class OpenFirebaseOrchestrator:
 
         # Setup Firebase authentication tokens if requested
         if firebase_auth and getattr(args, "check_with_auth", False):
-            # Skip authentication setup messages for --resume-auth-file mode
-            if not getattr(args, "resume_auth_file", None):
-                print(f"\n{BLUE}[INF]{RESET} Setting up Firebase authentication for {len(project_ids)} project(s)...")
             self._setup_firebase_auth_tokens(firebase_auth, project_ids, results, args)
 
         # Scan databases
@@ -1568,7 +1565,7 @@ class OpenFirebaseOrchestrator:
     def _display_auth_results_summary(self, scanner, firebase_auth):
         """Display authentication results summary to console."""
         print("\n" + "=" * 80)
-        print(f"{GREEN}[AUTH]{RESET} {ORANGE}AUTHENTICATION RESULTS SUMMARY{RESET}")
+        print(f"{GREEN}[AUTH]{RESET} {ORANGE}AUTHENTICATION SCAN SUMMARY{RESET}")
         print("=" * 80)
 
         summary_lines = self._generate_auth_results_summary(scanner, firebase_auth)
@@ -1581,7 +1578,7 @@ class OpenFirebaseOrchestrator:
         """Save authentication results summary to file."""
         with open(output_file, "a", encoding="utf-8") as f:
             f.write("\n" + "=" * 80 + "\n")
-            f.write("[AUTH] AUTHENTICATION RESULTS SUMMARY\n")
+            f.write("[AUTH] AUTHENTICATION SCAN SUMMARY\n")
             f.write("=" * 80 + "\n")
 
             summary_lines = self._generate_auth_results_summary(scanner, firebase_auth)
@@ -1663,7 +1660,6 @@ class OpenFirebaseOrchestrator:
                 print(f"{GREEN}[AUTH]{RESET} Successfully authenticated and validated project {validated_project_id}")
             else:
                 failed_auths += 1
-                print(f"{RED}[AUTH]{RESET} Authentication failed for project {project_id}")
 
             # Rate limiting - sleep between authentication requests to respect API limits
             time.sleep(1.0 / args.scan_rate)

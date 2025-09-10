@@ -559,22 +559,22 @@ class BaseScanner(ABC):
                                 content_json = json.loads(response_content) if response_content else {}
                                 if content_json == {} or content_json.get("documents") == []:
                                     # Empty collection - show database accessible but collection doesn't exist
-                                    print(f"{YELLOW}[!]{RESET} PUBLIC FIRESTORE DATABASE (AUTHENTICATED) - Database is publicly accessible with authentication, but this collection doesn't exist (use --fuzz-collections)")
+                                    print(f"{YELLOW}[!]{RESET} PUBLIC FIRESTORE DATABASE (AUTHENTICATED) - Database is publicly accessible with authentication, but this collection doesn't exist (use --fuzz-collections)\n")
                                 else:
                                     # Collection has content
-                                    print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")  # Empty line for readability
+                                    print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n") 
                             except (json.JSONDecodeError, ValueError):
                                 # If we can't parse JSON, fall back to generic message
-                                print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")  # Empty line for readability
+                                print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
                         else:
                             # Non-Firestore services
-                            print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")  # Empty line for readability
+                            print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
                     elif status in ["401", "403"]:
                         print(f"{RED}[-]{RESET} STILL PROTECTED - Resource remains protected even with authentication")
                     elif status == "404":
                         print(f"{RED}[-]{RESET} NOT FOUND - Resource not found")
                     else:
-                        print(f"{YELLOW}[?]{RESET} UNKNOWN - Unexpected response: {status}\n")  # Empty line for readability
+                        print(f"{YELLOW}[?]{RESET} UNKNOWN - Unexpected response: {status}\n")
 
     def _get_status_message(
         self,
@@ -741,7 +741,7 @@ class BaseScanner(ABC):
             if result.get("saved_file_path"):
                 print(f"\n{BLUE}[INF]{RESET} Config response saved to: {result['saved_file_path']}\n")  # Add newlines for readability
             else:
-                print()  # Empty line for readability
+                print()
 
         # Display authenticated results during individual scanning (verbose format)
         self._display_verbose_authenticated_results(results)
@@ -806,7 +806,7 @@ class BaseScanner(ABC):
                 else:
                     f.write("[?] UNKNOWN - Unexpected response: {status}\n")
 
-                f.write("\n")  # Empty line for readability
+                f.write("\n")
 
     def _get_resource_type_from_url(self, url: str) -> str:
         """Determine resource type from URL."""
