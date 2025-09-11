@@ -756,13 +756,8 @@ class OpenFirebaseOrchestrator:
         self, args, file_handler, results, final_apk_results, output_filename
     ):
         """Handle the results from extraction and perform additional operations."""
-        # Display results
+        # Results already displayed during processing - skip duplicate display
         if results:
-            print(
-                f"\n{BLUE}[INF]{RESET} Extracted Firebase items from {len(results)} package(s):"
-            )
-            file_handler.print_results(results)
-
             print(f"\n{BLUE}[INF]{RESET} Results have been saved to {output_filename}")
 
             # Extract and display project IDs
@@ -1643,7 +1638,7 @@ class OpenFirebaseOrchestrator:
             # Try authentication with multiple keys and JWT validation
             package_name = project_auth_data.get("package_name")
             cert_sha1_list = project_auth_data.get("cert_sha1_list", [])
-            app_id = project_auth_data.get("app_id")
+            app_id = project_auth_data.get("app_id")  # Will be None for auth-only extraction
 
             # Create timestamped output directory (same as scanning outputs)
             timestamped_output_path = create_output_path(args.output_dir, "dummy.txt", self.run_timestamp)
