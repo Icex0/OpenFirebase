@@ -631,6 +631,9 @@ class FirestoreScanner(BaseScanner):
             for url, result in project_results.items():
                 self._print_single_result(url, result)
 
+            # Display authenticated results during individual scanning (verbose format)
+            self._display_verbose_authenticated_results(project_results)
+
             # Save results gradually if output file is provided
             if output_file:
                 self._save_project_results_to_file(

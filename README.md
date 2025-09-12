@@ -293,7 +293,7 @@ openfirebase --resume ./2025-08-31_20-30-00_results --exclude-project-id "abc-pr
 
 #### Full read scan using project ID (cert and package name are optional but needed if there are Google API restrictions)
 ```bash
-openfirebase --project-id openfirebase --read-all --check-with-auth --email pentester@company.com --password SecurePass123 --api-key AIz... --cert-sha1 1126abfb2cc0656875e50099d1bb5376276ae5a5 --package-name com.openfire.base --proxy http://127.0.0.1:8080 
+openfirebase --project-id openfirebase --read-all --check-with-auth --email pentester@company.com --password SecurePass123 --api-key AIz... --app-id 1:482910573864:android:ab12cd34ef56gh78ij90kl --cert-sha1 1126abfb2cc0656875e50099d1bb5376276ae5a5 --package-name com.openfire.base --proxy http://127.0.0.1:8080 
 ```
 
 ## Disclaimer

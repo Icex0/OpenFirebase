@@ -1008,7 +1008,7 @@ class OpenFirebaseOrchestrator:
         # Scan databases
         if scan_rtdb:
             print("\n" + "=" * 80)
-            print(f"{BLUE}[INF]{RESET} Scanning {BLUE}Firebase realtime databases{RESET} for accessibility (rate: {args.scan_rate} req/s)...")
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase realtime databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
             if is_apk_mode:
@@ -1056,7 +1056,7 @@ class OpenFirebaseOrchestrator:
         # Scan storage
         if scan_storage:
             print("\n" + "=" * 80)
-            print(f"{BLUE}[INF]{RESET} Scanning {BLUE}Firebase storage buckets{RESET} for accessibility (rate: {args.scan_rate} req/s)...")
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase storage buckets{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
             if is_apk_mode:
@@ -1106,7 +1106,7 @@ class OpenFirebaseOrchestrator:
         # Scan Remote Config
         if scan_config:
             print("\n" + "=" * 80)
-            print(f"{BLUE}[INF]{RESET} Scanning {BLUE}Firebase Remote Config{RESET} for accessibility (rate: {args.scan_rate} req/s)...")
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase Remote Config{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
             if is_apk_mode:
@@ -1176,7 +1176,7 @@ class OpenFirebaseOrchestrator:
         # Scan Firestore
         if scan_firestore:
             print("\n" + "=" * 80)
-            print(f"{BLUE}[INF]{RESET} Scanning {BLUE}Firestore databases{RESET} for accessibility (rate: {args.scan_rate} req/s)...")
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firestore databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
             if is_apk_mode:
@@ -1232,9 +1232,9 @@ class OpenFirebaseOrchestrator:
 
         # Test write access to storage
         if write_storage:
-            print(
-                f"\n{BLUE}[INF]{RESET} Testing write access to Firebase storage buckets (rate: {args.scan_rate} req/s)...\n"
-            )
+            print("\n" + "=" * 80)
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firebase storage buckets{RESET} (rate: {args.scan_rate} req/s)...")
+            print("=" * 80 + "\n")
 
             if is_apk_mode:
                 storage_write_output_file = create_output_path(
@@ -1288,9 +1288,9 @@ class OpenFirebaseOrchestrator:
 
         # Test write access to Realtime Database
         if write_rtdb:
-            print(
-                f"\n{BLUE}[INF]{RESET} Testing write access to Firebase Realtime Database (rate: {args.scan_rate} req/s)...\n"
-            )
+            print("\n" + "=" * 80)
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firebase Realtime Database{RESET} (rate: {args.scan_rate} req/s)...")
+            print("=" * 80 + "\n")
 
             if is_apk_mode:
                 rtdb_write_output_file = create_output_path(
@@ -1333,20 +1333,20 @@ class OpenFirebaseOrchestrator:
             if scans_performed > 1:
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
-                    rtdb_write_results, "DATABASE WRITE", package_project_ids
+                    rtdb_write_results, "REALTIME DATABASE WRITE", package_project_ids
                 )
-                scan_summaries.append((rtdb_write_results, "DATABASE WRITE"))
+                scan_summaries.append((rtdb_write_results, "REALTIME DATABASE WRITE"))
             else:
                 # Single scan: print everything immediately
                 scanner.print_scan_results(
-                    rtdb_write_results, "DATABASE WRITE", package_project_ids
+                    rtdb_write_results, "REALTIME DATABASE WRITE", package_project_ids
                 )
 
         # Test write access to Firestore
         if write_firestore:
-            print(
-                f"\n{BLUE}[INF]{RESET} Testing write access to Firestore databases (rate: {args.scan_rate} req/s)...\n"
-            )
+            print("\n" + "=" * 80)
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firestore databases{RESET} (rate: {args.scan_rate} req/s)...")
+            print("=" * 80 + "\n")
 
             if is_apk_mode:
                 firestore_write_output_file = create_output_path(

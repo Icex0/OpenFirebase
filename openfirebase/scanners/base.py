@@ -447,7 +447,8 @@ class BaseScanner(ABC):
             "STORAGE": "FIREBASE STORAGE READ RESULTS",
             "STORAGE WRITE": "FIREBASE STORAGE WRITE RESULTS",
             "CONFIG": "FIREBASE REMOTE CONFIG READ RESULTS",
-            "FIRESTORE": "FIREBASE FIRESTORE READ RESULTS"
+            "FIRESTORE": "FIREBASE FIRESTORE READ RESULTS",
+            "FIRESTORE WRITE": "FIREBASE FIRESTORE WRITE RESULTS"
         }
 
         base_display_name = auth_type_mapping.get(scan_type, f"FIREBASE {scan_type} RESULTS")
@@ -1468,7 +1469,9 @@ class BaseScanner(ABC):
             "STORAGE": "FIREBASE STORAGE READ",
             "STORAGE WRITE": "FIREBASE STORAGE WRITE",
             "CONFIG": "FIREBASE REMOTE CONFIG READ",
-            "FIRESTORE": "FIREBASE FIRESTORE READ"
+            "FIRESTORE": "FIREBASE FIRESTORE READ",
+            "FIRESTORE WRITE": "FIREBASE FIRESTORE WRITE",
+            "REALTIME DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE"
         }
 
         display_name = type_mapping.get(scan_type, scan_type)
