@@ -255,7 +255,8 @@ class BaseScanner(ABC):
             return project_id
 
         # Firebase region redirect patterns
-        rtdb_region_match = re.search(r"https://([^.]+)\.firebasedatabase\.app", url)
+        # Handle URLs like https://project-id.region.firebasedatabase.app
+        rtdb_region_match = re.search(r"https://([^.]+)\.([^.]+)\.firebasedatabase\.app", url)
         if rtdb_region_match:
             project_id = rtdb_region_match.group(1)
             # Remove -default-rtdb suffix if present
@@ -737,14 +738,35 @@ class BaseScanner(ABC):
             )
             print(status_message)
 
+            # Check if this URL has an authenticated result and display it immediately
+            if url in self.authenticated_results:
+                auth_result = self.authenticated_results[url]
+                auth_status = auth_result.get("status", "unknown")
+                auth_security = auth_result.get("security", "unknown") 
+                auth_message = auth_result.get("message", "No message")
+
+                print(f"\n{BLUE}[AUTH]{RESET} Authentication retry result:\n")
+                print(f"URL: {url} (authenticated)")
+                print(f"Status: {auth_status}")
+                print(f"Response: {auth_message}")
+
+                # Show response content if available
+                if auth_result.get("response_content"):
+                    print(f"Content: {auth_result['response_content']}\n")
+
+                # Add status-specific messages for authenticated results
+                auth_status_message = self._get_status_message(
+                    auth_status, auth_security, auth_message, auth_result, resource_type
+                )
+                print(auth_status_message)
+
             # Print saved file path for config responses if available
             if result.get("saved_file_path"):
                 print(f"\n{BLUE}[INF]{RESET} Config response saved to: {result['saved_file_path']}\n")  # Add newlines for readability
             else:
                 print()
 
-        # Display authenticated results during individual scanning (verbose format)
-        self._display_verbose_authenticated_results(results)
+        # No longer display authenticated results at the end since they're shown inline now
 
         # Store authenticated results for this project before clearing
         if self.authenticated_results:
@@ -821,7 +843,10 @@ class BaseScanner(ABC):
     def _count_scan_results(
         self, scan_results: Dict[str, Dict[str, str]], resource_type: str = "database"
     ) -> Dict[str, int]:
-        """Count scan results by category per project ID (not per URL).
+        """Count scan results by category.
+        
+        For databases: Count individual URLs to show all different statuses found
+        For other resources: Count per project ID (legacy behavior)
 
         Args:
             scan_results: Dictionary mapping project IDs to their scan results
@@ -857,114 +882,127 @@ class BaseScanner(ABC):
             "total_open_collections_count": 0,  # For Firestore: count individual open collections
         }
 
-        # Count per project ID, not per URL
-        for project_id, results in scan_results.items():
-            # Determine the overall status for this project ID based on all URLs tested
-            has_public = False
-            has_protected = False
-            has_not_found = False
-            has_locked = False
-            has_rate_limited = False
-            has_missing_config = False
-            has_no_config = False
-            has_datastore_mode = False
-            has_no_listing = False
-            has_other = False
+        if resource_type == "database":
+            # For databases: Count individual URLs to show all different statuses found
+            for project_id, results in scan_results.items():
+                for url, result in results.items():
+                    status = result["status"]
+                    security = result["security"]
 
-            for url, result in results.items():
-                status = result["status"]
-                security = result["security"]
+                    # Skip region redirects (404 with REGION_REDIRECT) as they're not actual databases
+                    if status == STATUS_NOT_FOUND and security == "REGION_REDIRECT":
+                        continue
 
-                if status == STATUS_OK and security not in ["NO_CONFIG"]:
-                    has_public = True
-                    # PUBLIC_AUTH also counts as publicly accessible (just requires auth)
-                elif security == "NO_CONFIG":
-                    has_no_config = True
-                elif security == "MISSING_CONFIG":
-                    has_missing_config = True
-                elif security == "DATASTORE_MODE":
-                    has_datastore_mode = True
-                elif resource_type == "database":
-                    # For databases, only 401 (unauthorized) is considered protected
-                    if status == STATUS_UNAUTHORIZED:
-                        has_protected = True
-                    elif status == STATUS_FORBIDDEN:
-                        has_other = True  # 403 is not typical for Firebase databases
-                    elif status == STATUS_PRECONDITION_FAILED:
-                        has_other = True  # 412 is not typical for Firebase databases
-                elif resource_type == "firestore":
-                    # For Firestore, 403 means protected or invalid project
-                    if status == STATUS_FORBIDDEN or status == STATUS_UNAUTHORIZED:
-                        has_protected = True
-                    # Handle publicly accessible database with non-existent collection (only if truly public, not auth-only)
-                    elif (
-                        status == STATUS_OK
-                        and security == "PUBLIC_DB_NONEXISTENT_COLLECTION"
-                    ):
-                        has_public = (
-                            True  # Database is publicly accessible (security concern)
-                        )
-
-                # Count individual open collections for Firestore
-                if (
-                    resource_type == "firestore"
-                    and status == STATUS_OK
-                    and security in ["PUBLIC", "PUBLIC_AUTH"]
-                ):
-                    counts["total_open_collections_count"] += 1
-                elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
-                    # For storage and config, 401 and 403 are considered protected
-                    has_protected = True
-                elif status == STATUS_PRECONDITION_FAILED:
-                    if resource_type == "storage":
-                        # 412 for storage means bucket doesn't allow listing files, not protected
-                        has_no_listing = True
+                    if status == STATUS_OK and security not in ["NO_CONFIG"]:
+                        counts["public_count"] += 1
+                    elif status == STATUS_UNAUTHORIZED:
+                        counts["protected_count"] += 1
+                    elif status == STATUS_NOT_FOUND:
+                        counts["not_found_count"] += 1
+                    elif status == STATUS_LOCKED:
+                        counts["locked_count"] += 1
+                    elif status == STATUS_TOO_MANY_REQUESTS:
+                        counts["rate_limited_count"] += 1
                     else:
-                        # 412 is protected for config and other resources
+                        counts["other_count"] += 1
+        else:
+            # For non-database resources: Count per project ID using prioritization (legacy behavior)
+            for project_id, results in scan_results.items():
+                # Determine the overall status for this project ID based on all URLs tested
+                has_public = False
+                has_protected = False
+                has_not_found = False
+                has_locked = False
+                has_rate_limited = False
+                has_missing_config = False
+                has_no_config = False
+                has_datastore_mode = False
+                has_no_listing = False
+                has_other = False
+
+                for url, result in results.items():
+                    status = result["status"]
+                    security = result["security"]
+
+                    if status == STATUS_OK and security not in ["NO_CONFIG"]:
+                        has_public = True
+                        # PUBLIC_AUTH also counts as publicly accessible (just requires auth)
+                    elif security == "NO_CONFIG":
+                        has_no_config = True
+                    elif security == "MISSING_CONFIG":
+                        has_missing_config = True
+                    elif security == "DATASTORE_MODE":
+                        has_datastore_mode = True
+                    elif resource_type == "firestore":
+                        # For Firestore, 403 means protected or invalid project
+                        if status == STATUS_FORBIDDEN or status == STATUS_UNAUTHORIZED:
+                            has_protected = True
+                        # Handle publicly accessible database with non-existent collection (only if truly public, not auth-only)
+                        elif (
+                            status == STATUS_OK
+                            and security == "PUBLIC_DB_NONEXISTENT_COLLECTION"
+                        ):
+                            has_public = (
+                                True  # Database is publicly accessible (security concern)
+                            )
+
+                    # Count individual open collections for Firestore
+                    if (
+                        resource_type == "firestore"
+                        and status == STATUS_OK
+                        and security in ["PUBLIC", "PUBLIC_AUTH"]
+                    ):
+                        counts["total_open_collections_count"] += 1
+                    elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
+                        # For storage and config, 401 and 403 are considered protected
                         has_protected = True
-                elif status == STATUS_BAD_REQUEST:
-                    if "RULES_VERSION_ERROR" in security:
-                        has_protected = True
+                    elif status == STATUS_PRECONDITION_FAILED:
+                        if resource_type == "storage":
+                            # 412 for storage means bucket doesn't allow listing files, not protected
+                            has_no_listing = True
+                        else:
+                            # 412 is protected for config and other resources
+                            has_protected = True
+                    elif status == STATUS_BAD_REQUEST:
+                        if "RULES_VERSION_ERROR" in security:
+                            has_protected = True
+                        else:
+                            has_other = True
+                    elif status == STATUS_NOT_FOUND:
+                        if resource_type == "config":
+                            has_other = (
+                                True  # 404 is not typical for Firebase Remote Config
+                            )
+                        else:
+                            has_not_found = True  # For storage
+                    elif status == STATUS_LOCKED:
+                        has_other = True  # For storage/config, 423 is unusual
+                    elif status == STATUS_TOO_MANY_REQUESTS:
+                        has_rate_limited = True
                     else:
                         has_other = True
-                elif status == STATUS_NOT_FOUND:
-                    if resource_type == "config":
-                        has_other = (
-                            True  # 404 is not typical for Firebase Remote Config
-                        )
-                    else:
-                        has_not_found = True  # For databases and storage
-                elif status == STATUS_LOCKED:
-                    if resource_type == "database":
-                        has_locked = True  # Only databases can be locked/deactivated
-                    else:
-                        has_other = True  # For storage/config, 423 is unusual
-                elif status == STATUS_TOO_MANY_REQUESTS:
-                    has_rate_limited = True
-                else:
-                    has_other = True
 
-            # Count this project ID based on priority (most significant status wins)
-            if has_public:
-                counts["public_count"] += 1
-            elif has_protected:
-                counts["protected_count"] += 1
-            elif has_no_listing:
-                counts["no_listing_count"] += 1
-            elif has_rate_limited:
-                counts["rate_limited_count"] += 1
-            elif has_locked:
-                counts["locked_count"] += 1
-            elif has_not_found:
-                counts["not_found_count"] += 1
-            elif has_missing_config:
-                counts["missing_config_count"] += 1
-            elif has_no_config:
-                counts["no_config_count"] += 1
-            elif has_datastore_mode:
-                counts["datastore_mode_count"] += 1
-            elif has_other:
-                counts["other_count"] += 1
+                # Count this project ID based on priority (most significant status wins)
+                if has_public:
+                    counts["public_count"] += 1
+                elif has_protected:
+                    counts["protected_count"] += 1
+                elif has_no_listing:
+                    counts["no_listing_count"] += 1
+                elif has_rate_limited:
+                    counts["rate_limited_count"] += 1
+                elif has_locked:
+                    counts["locked_count"] += 1
+                elif has_not_found:
+                    counts["not_found_count"] += 1
+                elif has_missing_config:
+                    counts["missing_config_count"] += 1
+                elif has_no_config:
+                    counts["no_config_count"] += 1
+                elif has_datastore_mode:
+                    counts["datastore_mode_count"] += 1
+                elif has_other:
+                    counts["other_count"] += 1
 
         return counts
 
@@ -1212,7 +1250,12 @@ class BaseScanner(ABC):
                 else:
                     f.write(f"- {project_id}\n")
 
-        warning_message = f"{YELLOW}[!]{RESET}  {len(open_results)} open {resource_type}(s) found! Details saved to {open_file}"
+        # For databases, count individual URLs; for other resources, count projects
+        if resource_type == "database":
+            total_open_urls = sum(len(results) for results in open_results.values())
+            warning_message = f"{YELLOW}[!]{RESET}  {total_open_urls} open {resource_type}(s) found! Details saved to {open_file}"
+        else:
+            warning_message = f"{YELLOW}[!]{RESET}  {len(open_results)} open {resource_type}(s) found! Details saved to {open_file}"
 
         if print_warning:
             print(warning_message)
@@ -1564,7 +1607,6 @@ class BaseScanner(ABC):
                 self._write_scan_results_section(
                     f,
                     db_scan_results,
-                    "DATABASE READ RESULTS",
                     "REALTIME DATABASE READ RESULTS",
                     "database",
                     project_to_packages,

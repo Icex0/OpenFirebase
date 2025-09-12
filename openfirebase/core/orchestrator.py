@@ -1008,7 +1008,7 @@ class OpenFirebaseOrchestrator:
         # Scan databases
         if scan_rtdb:
             print("\n" + "=" * 80)
-            print(f"{BLUE}[INF]{RESET} Scanning {BLUE}Firebase databases{RESET} for accessibility (rate: {args.scan_rate} req/s)...")
+            print(f"{BLUE}[INF]{RESET} Scanning {BLUE}Firebase realtime databases{RESET} for accessibility (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
             if is_apk_mode:
