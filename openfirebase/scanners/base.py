@@ -1184,7 +1184,7 @@ class BaseScanner(ABC):
         base_path = Path(output_file)
         open_file = (
             base_path.parent
-            / f"{base_path.stem}_scan_output_{resource_type}_open_only.txt"
+            / f"{base_path.stem}_open_only.txt"
         )
 
         with open(open_file, "w", encoding="utf-8") as f:
@@ -1676,7 +1676,7 @@ class BaseScanner(ABC):
                 )
 
             # Combined summary (matches console output when using --read-all)
-            f.write("\nCOMBINED SUMMARY\n")
+            f.write("\n[UNAUTH] SCAN SUMMARY\n")
             f.write("=" * 80 + "\n")
 
             # Get counts for all scan types and calculate totals

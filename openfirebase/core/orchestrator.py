@@ -1013,7 +1013,7 @@ class OpenFirebaseOrchestrator:
 
             if is_apk_mode:
                 db_output_file = create_output_path(
-                    args.output_dir, "scan_output_db.txt", self.run_timestamp
+                    args.output_dir, "read_output_db.txt", self.run_timestamp
                 )
                 db_scan_results = scanner.scan_databases(
                     project_ids, package_project_ids, db_output_file
@@ -1021,11 +1021,11 @@ class OpenFirebaseOrchestrator:
             else:
                 db_output_file = (
                     create_output_path(
-                        args.output_dir, "scan_output_db.txt", self.run_timestamp
+                        args.output_dir, "read_output_db.txt", self.run_timestamp
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Don't create open-only files for individual scans if doing combined scan
@@ -1061,7 +1061,7 @@ class OpenFirebaseOrchestrator:
 
             if is_apk_mode:
                 storage_output_file = create_output_path(
-                    args.output_dir, "scan_output_storage.txt", self.run_timestamp
+                    args.output_dir, "read_output_storage.txt", self.run_timestamp
                 )
                 storage_scan_results = scanner.scan_storage_buckets(
                     project_ids, package_project_ids, storage_output_file
@@ -1069,11 +1069,11 @@ class OpenFirebaseOrchestrator:
             else:
                 storage_output_file = (
                     create_output_path(
-                        args.output_dir, "scan_output_storage.txt", self.run_timestamp
+                        args.output_dir, "read_output_storage.txt", self.run_timestamp
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Don't create open-only files for individual scans if doing combined scan
@@ -1113,7 +1113,7 @@ class OpenFirebaseOrchestrator:
                 config_data = extract_config_data(results)
                 if config_data:
                     config_output_file = create_output_path(
-                        args.output_dir, "scan_output_config.txt", self.run_timestamp
+                        args.output_dir, "read_output_config.txt", self.run_timestamp
                     )
                     config_scan_results = scanner.scan_config(
                         config_data, package_project_ids, config_output_file
@@ -1141,11 +1141,11 @@ class OpenFirebaseOrchestrator:
                 # Project ID mode - config scanning requires manual credentials
                 config_output_file = (
                     create_output_path(
-                        args.output_dir, "scan_output_config.txt", self.run_timestamp
+                        args.output_dir, "read_output_config.txt", self.run_timestamp
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Build config_data dictionary for project ID mode
@@ -1181,7 +1181,7 @@ class OpenFirebaseOrchestrator:
 
             if is_apk_mode:
                 firestore_output_file = create_output_path(
-                    args.output_dir, "scan_output_firestore.txt", self.run_timestamp
+                    args.output_dir, "read_output_firestore.txt", self.run_timestamp
                 )
                 # Don't create open-only files for individual scans if doing combined scan
                 # Exception: Always create open-only files when authentication is enabled
@@ -1197,11 +1197,11 @@ class OpenFirebaseOrchestrator:
             else:
                 firestore_output_file = (
                     create_output_path(
-                        args.output_dir, "scan_output_firestore.txt", self.run_timestamp
+                        args.output_dir, "read_output_firestore.txt", self.run_timestamp
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Don't create open-only files for individual scans if doing combined scan
@@ -1257,7 +1257,7 @@ class OpenFirebaseOrchestrator:
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Don't create open-only files for individual scans if doing combined scan
@@ -1313,7 +1313,7 @@ class OpenFirebaseOrchestrator:
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Don't create open-only files for individual scans if doing combined scan
@@ -1369,7 +1369,7 @@ class OpenFirebaseOrchestrator:
                     )
                     if scans_performed > 1
                     else create_output_path(
-                        args.output_dir, "scan_output.txt", self.run_timestamp
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
                     )
                 )
                 # Don't create open-only files for individual scans if doing combined scan
@@ -1403,7 +1403,7 @@ class OpenFirebaseOrchestrator:
         combined_output_file = None
         if scans_performed > 1:
             if is_apk_mode:
-                filename = "scan_output_full.txt" if args.scan_all or args.write_all else "scan_output.txt"
+                filename = "read_output_full.txt" if args.scan_all or args.write_all else "full_scan_output.txt"
                 combined_output_file = create_output_path(
                     args.output_dir, filename, self.run_timestamp
                 )
@@ -1428,7 +1428,7 @@ class OpenFirebaseOrchestrator:
                     )
             else:
                 combined_output_file = create_output_path(
-                    args.output_dir, "scan_output.txt", self.run_timestamp
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
                 )
                 # Defer warning messages to print at end with summaries
                 warning_messages = scanner.save_combined_scan_results(

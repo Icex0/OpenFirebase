@@ -7,14 +7,14 @@ Centralized configuration for all constants and settings.
 VERSION = "1.0.0"
 
 # ANSI color codes - Using 256-color mode for consistency across terminals
-GREEN = "\033[38;5;46m"  # Bright green
-RED = "\033[38;5;196m"   # Bright red
-ORANGE = "\033[38;5;208m" # Orange (unchanged)
-BLUE = "\033[38;5;177m"   # Blue (unchanged) 
-YELLOW = "\033[38;5;226m" # Bright yellow
-LIME = "\033[38;5;118m"  # Bright lime color
+GREEN = "\033[38;5;46m"  # Bright green for success
+RED = "\033[38;5;196m"   # Bright red for errors
+ORANGE = "\033[38;5;208m" # Orange for warnings
+BLUE = "\033[38;5;177m"   # Blue for information
+YELLOW = "\033[38;5;226m" # Bright yellow for warnings
+LIME = "\033[38;5;118m" # Bright lime
 GREY = "\033[90m"  # Dark grey color for unknown status
-GOLD = "\033[33m"  # Gold color for locked status
+GOLD = "\033[33m" # Gold for locked status
 RESET = "\033[0m"
 
 # Firebase Scanner Constants
@@ -41,7 +41,7 @@ ANDROID_BUILD_TOOLS_URL = "https://dl.google.com/android/repository/build-tools_
 ANDROID_BUILD_TOOLS_FOLDER = "android-13"
 
 # JADX Processing Configuration
-DEFAULT_TIMEOUT_SECONDS = 1800 # Wait 30 minutes for JADX before skipping
+DEFAULT_TIMEOUT_SECONDS = 1800 # Wait 30 minutes for JADX before falling back to fast extraction
 
 # File Configuration
 DEFAULT_CONFIG_PATH = "firebase_rules.json"
