@@ -376,7 +376,7 @@ def main(
     apk_dir: Optional[str] = Option(
         None,
         "-d", "--apk-dir",
-        help="JADX decompilation on directory containing APK files (*.apk). Recommended for multiple APKs.",
+        help="JADX decompilation on directory containing APK files (*.apk)",
         rich_help_panel="Input Options"
     ),
     fast_extract: bool = Option(

@@ -172,6 +172,20 @@ When using the `--read-config` option, the script will scan Firebase Remote Conf
 </details>
 
 <details>
+<summary><strong>Authenticated Scanning and Google API Restriction Bypass</strong></summary>
+
+When using the `--check-with-auth` option, OpenFirebase attempts to authenticate with Firebase services to access protected resources that return 401/403 errors during unauthenticated scanning:
+
+- **Account Creation and sign-in**: Automatically attempts to create Firebase user accounts using the Identity Toolkit API with extracted API keys and fetch access token.
+- **Anonymous sign-in**: If account creation with email/password fails, automatically retries with anonymous sign-in.
+- **Android Restriction Bypass**: Uses extracted Android package names and certificate SHA-1 hashes to bypass "restricted to Android app" API limitations
+- **Multi-Key Testing**: Tests multiple extracted API keys and certificate combinations to find working authentication methods
+- **Authenticated Retry**: Retries previously failed read/write operations using obtained authentication tokens
+- **Authentication Persistence**: Saves successful authentication data to `auth_data.json` for future `--resume-auth-file` usage
+
+</details>
+
+<details>
 <summary><strong>Resume from Previous Results</strong></summary>
 
 When you have already run extraction and want to skip the extraction phase (JADX decompilation) entirely, you can use:
@@ -197,7 +211,7 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | Argument | Short | Description |
 |----------|-------|-------------|
 | `--file` | `-f` | Single APK file to process with JADX decompilation |
-| `--apk-dir` | `-d` | JADX decompilation on directory containing APK files (*.apk). Recommended for multiple APKs |
+| `--apk-dir` | `-d` | JADX decompilation on directory containing APK files (*.apk) |
 | `--fast-extract` | `-F` | Use fast extraction (strings.xml from all /res/values-* directories) instead of full source analysis. Faster but limited |
 | `--resume` | `-r` | Resume from existing results folder containing *_firebase_items.txt file |
 | `--exclude-project-id` | | Exclude specific project ID(s) when resuming (comma-separated for multiple IDs, can only be used with --resume) |
@@ -213,7 +227,7 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--read-config` | `-rc` | Test Firebase Remote Config for read access |
 | `--read-firestore` | `-rf` | Test Firestore databases for unauthorized read access |
 | `--collection-name` | | Collection name(s) to test with --read-firestore (comma-separated for multiple, defaults to 'users') |
-| `--read-all` | `-ra` | Read Firebase databases, storage buckets, Remote Config, and Firestore for unauthorized access |
+| `--read-all` | `-ra` | Test Firebase databases, storage buckets, Remote Config, and Firestore for unauthorized access |
 | `--scan-rate` | `-l` | Rate limit for scanning (requests per second) |
 | `--fuzz-collections` | | Path to wordlist file for Firestore collection fuzzing when a publicly accessible database is found |
 
