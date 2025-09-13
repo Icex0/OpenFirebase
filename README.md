@@ -139,12 +139,11 @@ When using the `--read-storage` or `--write-storage` options, the script will sc
 <details>
 <summary><strong>Firebase Firestore Scanning</strong></summary>
 
-When using the `--read-firestore` or `--write-firestore` options, the script will scan Firestore databases to check accessibility:
+When using the `--read-firestore` or `--write-firestore` options, the script will scan Firestore (default) databases to check accessibility:
 
-- **Extracted Collections**: Uses Firestore collection and document names found during JADX decompilation from each APK's source code
-- **Default Collections**: When no collections are found, tests common collection names: `users`, `posts`, `messages`, `products`, `orders`
-- **Collection Fuzzing**: When `--fuzz-collections` is used with a wordlist path and a public database is found, automatically fuzzes collection names
-- Tests Firestore REST API endpoints:
+- **Extracted Collections**: Uses Firestore collection found during JADX decompilation from each APK's source code
+- **Collection Fuzzing**: When `--fuzz-collections` is used with a wordlist path and a public Firestore database is found, automatically fuzzes common collection names: `users`, `posts`, `messages`, `products`, `orders` etc
+- Uses Firestore REST API endpoint:
   - `https://firestore.googleapis.com/v1/projects/PROJECT_ID/databases/(default)/documents/COLLECTION_NAME`
 - **Read Testing (`--read-firestore`)**: Evaluates response status codes:
   - **200**: Public Firestore collection with data.
@@ -162,9 +161,8 @@ When using the `--read-firestore` or `--write-firestore` options, the script wil
 When using the `--read-config` option, the script will scan Firebase Remote Config accessibility using extracted Google API keys and App IDs. The scanner:
 
 - Extracts Google API keys and App IDs from string resources across all `/res/values-*` directories
-- Tests Firebase Remote Config API endpoints:
+- Uses Firebase Remote Config API:
   - `https://firebaseremoteconfig.googleapis.com/v1/projects/{PROJECT_ID}/namespaces/firebase:fetch?key={API_KEY}`
-- Makes POST requests with extracted App IDs
 - Evaluates response status codes:
   - **200**: Remote Config accessible.
   - **401/403**: Permission denied. There might be other Google API restrictions.
@@ -186,14 +184,10 @@ When you have already run extraction and want to skip the extraction phase (JADX
 <details>
 <summary><strong>Direct Project ID Scanning</strong></summary>
 
-When you already have extracted Firebase project IDs and want to skip the extraction phase, you can use:
+When you already have extracted Firebase project IDs and want to skip the extraction phase or when you have project IDs from other sources such as web, you can use:
 
 - `--project-id`: Scan specific project IDs provided as comma-separated values
 - `--project-id-file`: Scan project IDs from a file (one ID per line)
-
-These options are particularly useful when:
-- You've already run extraction and have a list of project IDs
-- You have project IDs from other sources such as web
 
 </details>
 

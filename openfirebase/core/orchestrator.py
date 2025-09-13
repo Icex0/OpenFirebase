@@ -1012,7 +1012,7 @@ class OpenFirebaseOrchestrator:
 
             if is_apk_mode:
                 db_output_file = create_output_path(
-                    args.output_dir, "read_output_db.txt", self.run_timestamp
+                    args.output_dir, "read_output_rtdb.txt", self.run_timestamp
                 )
                 db_scan_results = scanner.scan_databases(
                     project_ids, package_project_ids, db_output_file
@@ -1020,7 +1020,7 @@ class OpenFirebaseOrchestrator:
             else:
                 db_output_file = (
                     create_output_path(
-                        args.output_dir, "read_output_db.txt", self.run_timestamp
+                        args.output_dir, "read_output_rtdb.txt", self.run_timestamp
                     )
                     if scans_performed > 1
                     else create_output_path(

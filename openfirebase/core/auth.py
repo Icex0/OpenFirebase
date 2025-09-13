@@ -135,11 +135,13 @@ class FirebaseAuth:
                         restriction_indicator = " [RESTRICTED TO ANDROID APP]"
                     print(f"{RED}[AUTH]{RESET} Account creation failed for project {project_id}: {error_message}{restriction_indicator}")
                     self._auth_failures[project_id] = f"{error_message}{restriction_indicator}"
-                    return None
+                    # Try anonymous sign-in
+                    return self._try_anonymous_signin(project_id, api_key, package_name, cert_sha1)
                 except ValueError:
                     print(f"{RED}[AUTH]{RESET} Account creation failed for project {project_id} (HTTP 400)")
                     self._auth_failures[project_id] = "HTTP 400 error"
-                    return None
+                    # Try anonymous sign-in
+                    return self._try_anonymous_signin(project_id, api_key, package_name, cert_sha1)
 
             else:
                 # Check for specific error messages in non-400 responses
@@ -155,12 +157,14 @@ class FirebaseAuth:
 
                 print(f"{RED}[AUTH]{RESET} Account creation failed for project {project_id} (HTTP {response.status_code}){restriction_indicator}")
                 self._auth_failures[project_id] = f"HTTP {response.status_code}{restriction_indicator}"
-                return None
+                # Try anonymous sign-in
+                return self._try_anonymous_signin(project_id, api_key, package_name, cert_sha1)
 
         except requests.exceptions.RequestException as e:
             print(f"{RED}[AUTH]{RESET} Network error creating account for project {project_id}: {e}")
             self._auth_failures[project_id] = f"Network error: {e}"
-            return None
+            # Try anonymous sign-in
+            return self._try_anonymous_signin(project_id, api_key, package_name, cert_sha1)
 
     def _sign_in_existing_account(
         self,
@@ -242,6 +246,77 @@ class FirebaseAuth:
         except requests.exceptions.RequestException as e:
             print(f"{RED}[AUTH]{RESET} Network error signing in for project {project_id}: {e}")
             self._auth_failures[project_id] = f"Sign-in network error: {e}"
+            return None
+
+    def _try_anonymous_signin(
+        self,
+        project_id: str,
+        api_key: str,
+        package_name: Optional[str] = None,
+        cert_sha1: Optional[str] = None
+    ) -> Optional[str]:
+        """Try anonymous sign-in for Firebase authentication.
+
+        Args:
+            project_id: Firebase project ID
+            api_key: Firebase API key
+            package_name: Android package name for X-Android-Package header
+            cert_sha1: Android certificate SHA-1 hash for X-Android-Cert header
+
+        Returns:
+            ID token if successful, None if failed
+
+        """
+        try:
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
+            payload = {
+                "returnSecureToken": True
+            }
+
+            print(f"{BLUE}[AUTH]{RESET} Trying anonymous sign-in for project {project_id}...")
+
+            # Prepare headers including Android identification headers
+            headers = {}
+            if package_name:
+                headers["X-Android-Package"] = package_name
+            if cert_sha1:
+                headers["X-Android-Cert"] = cert_sha1
+
+            response = self.session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    id_token = response_data.get("idToken")
+
+                    if id_token:
+                        self._auth_tokens[project_id] = id_token
+                        print(f"{GREEN}[AUTH]{RESET} Anonymous sign-in successful for project {project_id}")
+                        return id_token
+                    print(f"{RED}[AUTH]{RESET} No idToken in anonymous sign-in response for project {project_id}")
+                    return None
+
+                except ValueError as e:
+                    print(f"{RED}[AUTH]{RESET} Failed to parse anonymous sign-in JSON response for project {project_id}: {e}")
+                    return None
+            else:
+                # Try to extract detailed error message from response
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get("error", {}).get("message", "Unknown error")
+                    print(f"{RED}[AUTH]{RESET} Anonymous sign-in failed for project {project_id}: {error_message}")
+                    return None
+                except ValueError:
+                    print(f"{RED}[AUTH]{RESET} Anonymous sign-in failed for project {project_id} (HTTP {response.status_code})")
+                    return None
+
+        except requests.exceptions.RequestException as e:
+            print(f"{RED}[AUTH]{RESET} Network error during anonymous sign-in for project {project_id}: {e}")
             return None
 
     def decode_jwt(self, token: str) -> Optional[Dict]:
