@@ -98,7 +98,7 @@ OpenFirebase uses JADX decompilation by default for source code analysis. This *
 </details>
 
 <details>
-<summary><strong>Firebase Database Scanning</strong></summary>
+<summary><strong>Firebase Realtime Database Scanning</strong></summary>
 
 When using the `--read-rtdb` or `--write-rtdb` options, the script will scan all unique Firebase project IDs to check database accessibility and security status. The scanner:
 
@@ -106,6 +106,7 @@ When using the `--read-rtdb` or `--write-rtdb` options, the script will scan all
   - `https://PROJECT_ID.firebaseio.com/.json`
   - `https://PROJECT_ID-default-rtdb.firebaseio.com/.json`
 - Handles region redirects automatically (e.g., europe-west1)
+- Supports multiple Realtime Databases in the same project. The second database automatically has the same name as the project, if not manually changed.
 - **Read Testing (`--read-rtdb`)**: Evaluates response status codes:
   - **200**: Public database access
   - **403**: Permission denied (Protected)
@@ -285,13 +286,13 @@ openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./open
 openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlists/firestore-collections.txt
 ```
 
-#### Resume from extraction only results and perform scans
+#### Resume from extraction only results and perform all read scans
 ```bash
 # Resume from extraction only firebase items
 openfirebase --resume ./2025-08-31_20-30-00_results --exclude-project-id "abc-project" --read-all
 ```
 
-#### Full read scan using project ID (cert and package name are optional but needed if there are Google API restrictions)
+#### Full read scan using project ID (cert-sha1 and package name are optional but needed if there are Google API restrictions)
 ```bash
 openfirebase --project-id openfirebase --read-all --check-with-auth --email pentester@company.com --password SecurePass123 --api-key AIz... --app-id 1:482910573864:android:ab12cd34ef56gh78ij90kl --cert-sha1 1126abfb2cc0656875e50099d1bb5376276ae5a5 --package-name com.openfire.base --proxy http://127.0.0.1:8080 
 ```

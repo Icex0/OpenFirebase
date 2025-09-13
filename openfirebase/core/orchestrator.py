@@ -634,7 +634,6 @@ class OpenFirebaseOrchestrator:
             # If we have results or shutdown was requested, still try to process what we have
             final_results = results if results is not None else extractor.get_results()
             if final_results:
-                print(f"\n{BLUE}[INF]{RESET} Processing extracted data before shutdown...")
                 return self._handle_extraction_results(
                     args, file_handler, final_results, final_results, timestamped_output
                 )
@@ -1139,14 +1138,8 @@ class OpenFirebaseOrchestrator:
                     )
             else:
                 # Project ID mode - config scanning requires manual credentials
-                config_output_file = (
-                    create_output_path(
-                        args.output_dir, "read_output_config.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
+                config_output_file = create_output_path(
+                    args.output_dir, "read_output_config.txt", self.run_timestamp
                 )
                 # Build config_data dictionary for project ID mode
                 config_data = {}

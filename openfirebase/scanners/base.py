@@ -1547,13 +1547,9 @@ class BaseScanner(ABC):
 
             # Add trufflehog command for config scans
             if resource_type == "config":
-                print(f"{YELLOW}[!]{RESET}  It is recommended to scan all configs for secrets with Trufflehog using the following command:")
-                # Construct the full path to the remote_config_results directory
-                if output_dir:
-                    config_path = f"{output_dir}/remote_config_results"
-                else:
-                    config_path = "./remote_config_results"
-                print(f"{YELLOW}[!]{RESET}  trufflehog filesystem {config_path}")
+                print(f"{YELLOW}[!]{RESET}  It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:")
+                print(f"{YELLOW}[!]{RESET}  trufflehog filesystem remote_config_results")
+                print(f"{YELLOW}[!]{RESET}  gitleaks dir remote_config_results -v")
 
         print("=" * 80)
 
@@ -1815,78 +1811,6 @@ class BaseScanner(ABC):
                     f"OVERALL WARNING: {total_public} total public Firebase resources found!\n"
                 )
                 f.write("These resources are accessible without authentication.\n")
-
-        # Save open-only results files
-        if db_scan_results:
-            warning = self._save_open_only_results(
-                db_scan_results,
-                output_file,
-                "database",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
-        if storage_scan_results:
-            warning = self._save_open_only_results(
-                storage_scan_results,
-                output_file,
-                "storage",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
-        if config_scan_results:
-            warning = self._save_open_only_results(
-                config_scan_results,
-                output_file,
-                "config",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
-        if firestore_scan_results:
-            warning = self._save_open_only_results(
-                firestore_scan_results,
-                output_file,
-                "firestore",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
-        if storage_write_results:
-            warning = self._save_open_only_results(
-                storage_write_results,
-                output_file,
-                "storage_write",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
-        if rtdb_write_results:
-            warning = self._save_open_only_results(
-                rtdb_write_results,
-                output_file,
-                "database_write",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
-        if firestore_write_results:
-            warning = self._save_open_only_results(
-                firestore_write_results,
-                output_file,
-                "firestore_write",
-                package_project_ids,
-                print_warnings,
-            )
-            if warning:
-                warning_messages.append(warning)
 
         return warning_messages
 

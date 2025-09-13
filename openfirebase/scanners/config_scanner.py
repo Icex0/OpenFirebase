@@ -342,6 +342,11 @@ class ConfigScanner(BaseScanner):
         # Save final summary
         if output_file:
             self._save_final_summary_to_file(results, output_file, "config")
+            
+            # Create open-only results file (for single scans)
+            self._save_open_only_results(
+                results, output_file, "config", package_project_ids
+            )
 
         return results
 
@@ -413,10 +418,8 @@ class ConfigScanner(BaseScanner):
                     resource_word = "databases"
                 f.write(f"\nWARNING: {counts['public_count']} public {resource_word} found!\n")
                 f.write(f"These {resource_word} are accessible without authentication.\n")
-                # Get the directory where config files are actually saved
-                output_dir = os.path.dirname(output_file) if output_file else "."
-                config_dir = os.path.join(output_dir, "remote_config_results")
-                f.write("It is recommended to scan all configs for secrets with Trufflehog using the following command:\n")
-                f.write(f"trufflehog filesystem {config_dir}\n")
+                f.write("It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:\n")
+                f.write(f"trufflehog filesystem remote_config_results\n")
+                f.write(f"gitleaks dir remote_config_results -v\n")
 
 

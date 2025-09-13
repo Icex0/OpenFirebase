@@ -634,6 +634,13 @@ class FirestoreScanner(BaseScanner):
             # Display authenticated results during individual scanning (verbose format)
             self._display_verbose_authenticated_results(project_results)
 
+            # Store authenticated results for this project before any potential clearing
+            if self.authenticated_results:
+                self.all_authenticated_results[project_id] = self.authenticated_results.copy()
+
+            # Clear authenticated results to avoid carryover to next project
+            self.authenticated_results.clear()
+
             # Save results gradually if output file is provided
             if output_file:
                 self._save_project_results_to_file(
