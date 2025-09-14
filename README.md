@@ -25,7 +25,7 @@ Supports multiple inputs including APK extraction via JADX decompilation, fast e
 ## Requirements
 
 - Python 3.8+
-- Java Runtime Environment (JRE) 8+ (required for JADX decompilation and apksigner tool)
+- Java 11+ (required for JADX decompilation and apksigner tool)
 
 ## Installation
 
