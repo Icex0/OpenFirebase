@@ -178,6 +178,10 @@ class JADXExtractor:
             temp_dir: Path to temporary directory to clean up
 
         """
+        # Skip cleanup during graceful shutdown to avoid locked file issues
+        if is_shutdown_requested():
+            return
+            
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
@@ -199,7 +203,7 @@ class JADXExtractor:
                 if attempt < max_attempts - 1:
                     # Wait a bit and try again
                     print(
-                        f"  ⏳ Cleanup attempt {attempt + 1} failed, retrying in 1 second..."
+                        f"{BLUE}[INF]{RESET} Cleanup attempt {attempt + 1} failed, retrying in 1 second..."
                     )
                     time.sleep(1)
                 else:

@@ -545,6 +545,11 @@ class OpenFirebaseOrchestrator:
             firebase_items = extractor.process_apk(apk_path)
             pbar.update(1)
 
+        # Display extracted items status
+        from ..utils import format_firebase_items_status
+        status_msg = format_firebase_items_status(apk_path.stem, firebase_items, "Fast")
+        print(status_msg)
+
         if firebase_items:
             file_handler.save_single_result(
                 apk_path.stem, firebase_items, timestamped_output
@@ -562,6 +567,11 @@ class OpenFirebaseOrchestrator:
         try:
             jadx_extractor = JADXExtractor(apk_path.parent, processing_mode="single")
             firebase_items = jadx_extractor.process_file_with_progress(apk_path)
+
+            # Display extracted items status
+            from ..utils import format_firebase_items_status
+            status_msg = format_firebase_items_status(apk_path.stem, firebase_items, "JADX")
+            print(status_msg)
 
             if firebase_items:
                 file_handler.save_single_result(
@@ -682,10 +692,11 @@ class OpenFirebaseOrchestrator:
                     for future in as_completed(future_to_apk):
                         # Check for shutdown request
                         if is_shutdown_requested():
-                            print(f"\n{BLUE}[INF]{RESET} Graceful shutdown requested - cancelling remaining tasks...")
                             # Cancel all pending futures
                             for f in future_to_apk:
                                 f.cancel()
+                            # Close progress bar and break
+                            pbar.close()
                             # Break out of loop to return results collected so far
                             break
 

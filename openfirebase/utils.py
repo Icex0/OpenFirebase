@@ -6,6 +6,7 @@ Contains utility functions for signal handling, file operations, timestamp manag
 import os
 import re
 import signal
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -92,48 +93,90 @@ def signal_handler(sig, _):
 
 def force_shutdown():
     """Force immediate shutdown - used when graceful shutdown fails."""
-    global _global_executor
+    global _global_executor, _shutdown_requested
     from .core.config import RED, RESET
     print(f"\n{RED}[X]{RESET} Force shutdown - terminating processes...")
 
-    # Force shutdown the executor if it exists
+    # Set shutdown flag to prevent new processes from starting
+    _shutdown_requested = True
+
+    # Kill worker processes first, then clean up executor
     if _global_executor is not None:
         try:
-            # First attempt graceful shutdown
+            # Kill processes immediately to stop any running tasks
+            if (hasattr(_global_executor, "_processes") 
+                and _global_executor._processes is not None):
+                for process in _global_executor._processes.values():
+                    if process.is_alive():
+                        process.kill()
+                        process.join(timeout=1)
+            
+            # Then shutdown executor to clean up resources
             _global_executor.shutdown(wait=False)
-
-            # Try to access and forcefully terminate worker processes
-            try:
-                # This works for concurrent.futures.ProcessPoolExecutor
-                if (
-                    hasattr(_global_executor, "_processes")
-                    and _global_executor._processes is not None
-                ):
-                    processes = _global_executor._processes.values()
-                    if processes:
-                        # Terminate processes
-                        for process in processes:
-                            if process.is_alive():
-                                process.terminate()
-
-                        # Give processes a short time to terminate gracefully
-                        time.sleep(0.3)
-
-                        # Force kill any remaining processes
-                        for process in processes:
-                            if process.is_alive():
-                                process.kill()
-
-            except (AttributeError, OSError):
-                # Silently handle cases where we can't access processes
-                pass
-
-        except Exception:
-            # Silently handle any other cleanup errors
+        except:
             pass
 
-    # Use os._exit to force immediate termination without cleanup
+    # Kill any remaining Java processes  
+    _kill_java_processes()
     os._exit(1)
+
+
+def _kill_java_processes():
+    """Kill any remaining Java processes related to OpenFirebase."""
+    try:
+        if os.name == "nt":  # Windows
+            _kill_java_processes_windows()
+        else:  # Unix-like systems
+            _kill_java_processes_unix()
+    except:
+        pass
+
+
+def _kill_java_processes_windows():
+    """Kill Java processes on Windows."""
+    try:
+        result = subprocess.run(
+            ["wmic", "process", "where", "name='java.exe'", "get", "ProcessId,CommandLine", "/format:csv"],
+            capture_output=True, text=True, timeout=5
+        )
+        
+        if result.returncode == 0:
+            for line in result.stdout.strip().split('\n')[1:]:  # Skip header
+                if line.strip():
+                    parts = line.split(',')
+                    if len(parts) >= 3:
+                        command_line = ','.join(parts[1:-1])
+                        pid = parts[-1].strip()
+                        
+                        if ('jadx' in command_line.lower() or 
+                            'apksigner' in command_line.lower()):
+                            try:
+                                subprocess.run(["taskkill", "/F", "/PID", pid], 
+                                             capture_output=True, timeout=3)
+                            except:
+                                pass
+    except:
+        pass
+
+
+def _kill_java_processes_unix():
+    """Kill Java processes on Unix-like systems."""
+    try:
+        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
+        
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if 'java' in line and ('jadx' in line.lower() or 'apksigner' in line.lower()):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            pid = int(parts[1])
+                            subprocess.run(["kill", "-KILL", str(pid)], 
+                                         capture_output=True, timeout=3)
+                        except:
+                            pass
+    except:
+        pass
 
 
 def set_global_executor(executor):
@@ -427,6 +470,7 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
         explicit_project_ids = []  # Collect Firebase_Project_ID entries in order
         google_api_keys = []    # Collect ALL Google_API_Key entries in order
         other_api_keys = []     # From Other_Google_API_Key fields
+        app_ids = []            # Collect ALL Google_App_ID entries in order
         cert_sha1_list = []     # Collect all SHA-1 certificates
         apk_package_name = None
 
@@ -440,6 +484,10 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                 google_api_keys.append(link_value)  # Collect ALL API keys in order
             elif link_type == "Other_Google_API_Key":
                 other_api_keys.append(link_value)
+            elif link_type == "Google_App_ID":
+                app_ids.append(link_value)  # Collect ALL App IDs in order
+            elif link_type == "Other_Google_App_ID":
+                app_ids.append(link_value)  # Collect other Google App IDs too
             elif link_type == "APK_Certificate_SHA1":
                 cert_sha1_list.append(link_value)  # Collect all certificates
             elif link_type == "APK_Package_Name":
@@ -463,6 +511,7 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                 auth_data[project_id] = {
                     "main_project_id": None,
                     "api_keys": [],
+                    "app_id": None,
                     "cert_sha1_list": [],  # List of all SHA-1 certificates
                     "package_name": None
                 }
@@ -494,6 +543,8 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                     auth_data[project_id]["api_keys"] = [google_api_keys[project_index]]
 
                 # Add additional fields for main project
+                if project_index is not None and project_index < len(app_ids):
+                    auth_data[project_id]["app_id"] = app_ids[project_index]
                 if cert_sha1_list:
                     auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
 
@@ -514,6 +565,9 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                 
                 auth_data[project_id]["api_keys"] = api_keys_to_use
 
+                # Also assign app_id positionally for other projects
+                if project_index is not None and project_index < len(app_ids):
+                    auth_data[project_id]["app_id"] = app_ids[project_index]
                 if cert_sha1_list:
                     auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
 
