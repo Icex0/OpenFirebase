@@ -6,6 +6,7 @@ extracting SHA-1 certificate hashes and package names from APK files.
 
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
