@@ -307,14 +307,14 @@ class OpenFirebaseOrchestrator:
         if not args.write_storage and not write_firestore and not args.write_all and not has_specific_scan_flags:
             if not has_manual_credentials:
                 print(
-                    f"{YELLOW}[WARNING]{RESET} NOTE: Remote Config scanning is not available with --project-id because it requires Google API keys extracted from APK files."
+                    f"{YELLOW}[WARNING]{RESET} Remote Config scanning is not available with --project-id because it requires Google API keys extracted from APK files."
                 )
                 print(
                     "   Database, storage, and Firestore scanning will be performed by default.\n"
                 )
         elif args.scan_config and not has_manual_credentials:
             print(
-                f"{YELLOW}[WARNING]{RESET} NOTE: Remote Config scanning is not available with --project-id because it requires Google API keys extracted from APK files."
+                f"{YELLOW}[WARNING]{RESET} Remote Config scanning is not available with --project-id because it requires Google API keys extracted from APK files."
             )
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
@@ -382,14 +382,14 @@ class OpenFirebaseOrchestrator:
         if not args.write_storage and not write_firestore and not args.write_all and not has_specific_scan_flags:
             if not has_manual_credentials:
                 print(
-                    f"{YELLOW}[WARNING]{RESET} NOTE: Remote Config scanning is not available with --project-id-file because it requires Google API keys extracted from APK files."
+                    f"{YELLOW}[WARNING]{RESET} Remote Config scanning is not available with --project-id-file because it requires Google API keys extracted from APK files."
                 )
                 print(
                     "   Database, storage, and Firestore scanning will be performed by default.\n"
                 )
         elif args.scan_config and not has_manual_credentials:
             print(
-                f"{YELLOW}[WARNING]{RESET} NOTE: Remote Config scanning is not available with --project-id-file because it requires Google API keys extracted from APK files."
+                f"{YELLOW}[WARNING]{RESET} Remote Config scanning is not available with --project-id-file because it requires Google API keys extracted from APK files."
             )
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
@@ -536,7 +536,7 @@ class OpenFirebaseOrchestrator:
             f"{BLUE}[INF]{RESET} Using fast extraction for {apk_path.name} - source code analysis disabled!"
         )
         print(
-            f"{YELLOW}[WARNING]{RESET} Note: Firestore collections and Java patterns will not be detected!"
+            f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected!"
         )
 
         # Show simple progress for fast extraction
@@ -584,7 +584,7 @@ class OpenFirebaseOrchestrator:
                 f"{BLUE}[INF]{RESET} Using fast extraction for APK processing - source code analysis disabled"
             )
             print(
-                f"{YELLOW}[WARNING]{RESET} Note: Firestore collections and Java patterns will not be detected"
+                f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected"
             )
         else:
             extractor = JADXExtractor(
@@ -1626,7 +1626,6 @@ class OpenFirebaseOrchestrator:
                 continue
 
             api_keys = project_auth_data["api_keys"]
-            print(f"{BLUE}[AUTH]{RESET} Attempting authentication for project {project_id} with {len(api_keys)} API key(s)...")
 
             # Try authentication with multiple keys and JWT validation
             package_name = project_auth_data.get("package_name")

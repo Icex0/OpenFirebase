@@ -180,7 +180,7 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 - **Anonymous sign-in**: If account creation with email/password fails, automatically retries with anonymous sign-in.
 - **Android Restriction Bypass**: Uses extracted Android package names and certificate SHA-1 hashes to bypass "restricted to Android app" API limitations
 - **Multi-Key Testing**: Tests multiple extracted API keys and certificate combinations to find working authentication methods
-- **Authenticated Retry**: Retries previously failed read/write operations using obtained authentication tokens
+- **Authenticated Retry**: Retries previously failed read/write operations using obtained authentication token
 - **Authentication Persistence**: Saves successful authentication data to `auth_data.json` for future `--resume-auth-file` usage
 
 </details>

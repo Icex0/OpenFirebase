@@ -89,7 +89,7 @@ class FirebaseAuth:
                 "returnSecureToken": True
             }
 
-            print(f"{BLUE}[AUTH]{RESET} Attempting to create Firebase account for project {project_id}...")
+            print(f"{BLUE}[AUTH]{RESET} Attempting to create Firebase account for project: {project_id}")
 
             # Prepare headers including Android identification headers
             headers = {}
@@ -273,7 +273,7 @@ class FirebaseAuth:
                 "returnSecureToken": True
             }
 
-            print(f"{BLUE}[AUTH]{RESET} Trying anonymous sign-in for project {project_id}...")
+            print(f"{BLUE}[AUTH]{RESET} Trying anonymous sign-in for project: {project_id}")
 
             # Prepare headers including Android identification headers
             headers = {}
@@ -417,8 +417,9 @@ class FirebaseAuth:
         # Track if we found any valid certificates across all API keys
         any_valid_certificate_found = False
 
+        print("=" * 80)
         for i, api_key in enumerate(api_keys):
-            print(f"{BLUE}[AUTH]{RESET} Trying API key {i+1}/{len(api_keys)} for project {project_id}...")
+            print(f"{BLUE}[AUTH]{RESET} Trying API key {i+1}/{len(api_keys)} for project: {project_id}")
 
             # Track if we found a valid certificate (passed Android restriction)
             found_valid_certificate = False
@@ -468,12 +469,10 @@ class FirebaseAuth:
                         found_valid_certificate = True
                         any_valid_certificate_found = True
                         if cert_sha1:
-                            print(f"{YELLOW}[AUTH]{RESET} Certificate {cert_sha1[:8]}... is valid (passed Android restriction), but email/password authentication is disabled for this project")
+                            print(f"{YELLOW}[AUTH]{RESET} Certificate {cert_sha1[:8]}... is valid, but email/password authentication is disabled for this project")
                         else:
                             print(f"{YELLOW}[AUTH]{RESET} Email/password authentication is disabled for this project")
                         break  # Stop trying certificates - we found a working certificate
-                    # For any other error, stop trying certificates
-                    print(f"{YELLOW}[AUTH]{RESET} Authentication failed with error: {failure_reason}")
                     break  # Stop trying certificates for this API key
 
             if not found_valid_certificate:

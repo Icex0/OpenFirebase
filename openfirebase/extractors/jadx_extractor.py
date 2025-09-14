@@ -285,7 +285,7 @@ class JADXExtractor:
             from ..extractors.extractor import FirebaseExtractor
 
             print(f"{BLUE}[INF]{RESET} Using fast extraction fallback for {apk_path.name}")
-            print(f"{YELLOW}[WARNING]{RESET} Note: Firestore collections and Java patterns will not be detected!")
+            print(f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected!")
 
             # Create fast extractor and process the APK
             fast_extractor = FirebaseExtractor(apk_path.parent)
