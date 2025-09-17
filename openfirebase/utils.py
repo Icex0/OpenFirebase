@@ -10,7 +10,7 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 
 def create_openfirebase_header():
@@ -293,6 +293,25 @@ def generate_timestamp() -> str:
 def get_current_datetime() -> str:
     """Generate a human-readable timestamp for logging."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_apk_package_name(apk_path: Path) -> Optional[str]:
+    """Extract package name from APK file.
+    
+    Args:
+        apk_path: Path to the APK file
+        
+    Returns:
+        Package name if extraction succeeds, None otherwise
+    """
+    try:
+        # Try using androguard APK.get_package() first
+        from androguard.core.apk import APK
+        apk = APK(apk_path)
+        return apk.get_package()
+    except Exception:
+        # If androguard fails, fall back to APK filename
+        return apk_path.stem
 
 
 def format_firebase_items_status(

@@ -317,23 +317,15 @@ class JADXExtractor:
             # Java files - contain Firestore patterns and Firebase URLs
             files.extend(directory.rglob("*.java"))
 
-            # XML files - but only from values directories for Firebase config
+            # XML files - only from /res/values directories (contains strings.xml and other Firebase config)
             xml_files = directory.rglob("*.xml")
             for xml_file in xml_files:
-                # Only include XML files from values directories or if they might contain Firebase config
                 path_str = str(xml_file).lower()
-                if (
-                    "/res/values" in path_str
-                    or "strings.xml" in path_str
-                    or "config.xml" in path_str
-                    or "google_services" in path_str
-                ):
+                if "/res/values" in path_str:
                     files.append(xml_file)
 
-            # Other files that might contain Firebase references
+            # JSON files - may contain Firebase URLs in some cases
             files.extend(directory.rglob("*.json"))
-            files.extend(directory.rglob("*.txt"))
-            files.extend(directory.rglob("*.properties"))
 
         except Exception as e:
             print(f"Error searching files in {directory}: {e}")
@@ -628,30 +620,23 @@ class JADXExtractor:
         """Process a single APK file and return Firebase items."""
         firebase_items = self.extract_from_apk(apk_path)
 
-        # Extract real package name using androguard
-        from .signature_extractor import SignatureExtractor
-        _, apk_package_name = SignatureExtractor.extract_apk_signature(apk_path)
-        
-        # Use real package name if available, otherwise fall back to APK filename
-        package_name = apk_package_name if apk_package_name else apk_path.stem
+        # Extract real package name
+        from ..utils import get_apk_package_name
+        package_name = get_apk_package_name(apk_path)
 
         if firebase_items:
             with self.results_lock:
                 self.results[package_name] = firebase_items
-        # Remove print statements - will be handled by main progress bar
-
+                
         return firebase_items
 
     def process_file_with_progress(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Process a single APK file with progress bar showing file scanning progress."""
         firebase_items = self.extract_from_apk_with_progress(apk_path)
 
-        # Extract real package name using androguard
-        from .signature_extractor import SignatureExtractor
-        _, apk_package_name = SignatureExtractor.extract_apk_signature(apk_path)
-        
-        # Use real package name if available, otherwise fall back to APK filename
-        package_name = apk_package_name if apk_package_name else apk_path.stem
+        # Extract real package name
+        from ..utils import get_apk_package_name
+        package_name = get_apk_package_name(apk_path)
 
         if firebase_items:
             with self.results_lock:

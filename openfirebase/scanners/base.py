@@ -585,6 +585,7 @@ class BaseScanner(ABC):
         message: str,
         result: Dict[str, str],
         resource_type: str = "database",
+        colorize: bool = True,
     ) -> str:
         """Get the appropriate status message for display.
 
@@ -594,11 +595,18 @@ class BaseScanner(ABC):
             message: Base message
             result: Full result dictionary
             resource_type: Type of resource ("database", "storage", "config", or "firestore")
+            colorize: Whether to include ANSI color codes (True for console, False for files)
 
         Returns:
             Formatted status message
 
         """
+        # Conditionally apply colors based on colorize parameter
+        if colorize:
+            from ..core.config import RED, GREEN, LIME, YELLOW, GREY, GOLD, BLUE, RESET
+        else:
+            RED = GREEN = LIME = YELLOW = GREY = GOLD = BLUE = RESET = ""
+        
         if resource_type == "storage":
             # Storage-specific messages
             if status == STATUS_OK:
@@ -1109,7 +1117,7 @@ class BaseScanner(ABC):
 
                 # Add status-specific messages
                 status_message = self._get_status_message(
-                    status, security, message, result, resource_type
+                    status, security, message, result, resource_type, colorize=False
                 )
                 f.write(f"{status_message}\n")
                 f.write("\n")

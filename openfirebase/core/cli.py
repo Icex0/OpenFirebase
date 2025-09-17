@@ -221,18 +221,6 @@ def validate_remote_config_options(
                 print(f"{typer.style('[ERROR]', fg='red')} Could not read project ID file: {e}")
                 raise typer.Exit(1)
 
-        # For project-id modes, warn if cert_sha1 or package_name are missing
-        if not cert_sha1:
-            print(
-                f"{typer.style('[WARNING]', fg='yellow')} --cert-sha1 not provided. "
-                "Remote Config scanning may fail without Android certificate SHA-1 hash."
-            )
-        if not package_name:
-            print(
-                f"{typer.style('[WARNING]', fg='yellow')} --package-name not provided. "
-                "Remote Config scanning may fail without Android package name."
-            )
-
 
 def validate_write_options(
     write_storage: bool,

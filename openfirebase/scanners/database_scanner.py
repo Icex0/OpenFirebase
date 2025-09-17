@@ -297,7 +297,7 @@ class DatabaseScanner(BaseScanner):
                     f.write(f"Content: {result['response_content']}\n")
 
                 status_message = self._get_status_message(
-                    status, security, message, result, "database"
+                    status, security, message, result, "database", colorize=False
                 )
                 f.write(f"{status_message}\n")
                 f.write("\n")

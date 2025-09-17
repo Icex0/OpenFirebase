@@ -21,7 +21,10 @@ def process_apk_multiprocessing(args_tuple) -> tuple:
     """
     apk_path_str, input_folder, fast_extract, output_file, timeout_seconds = args_tuple
     apk_path = Path(apk_path_str)
-    package_name = apk_path.stem
+    
+    # Extract real package name
+    from ..utils import get_apk_package_name
+    package_name = get_apk_package_name(apk_path)
 
     # Set up signal handler for subprocess to handle Ctrl+C gracefully
     def subprocess_signal_handler(sig, _):

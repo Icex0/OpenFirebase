@@ -65,7 +65,7 @@ class AuthDataHandler:
 
             print(f"{GREEN}[AUTH]{RESET} Saved authentication data for project {project_id} to {auth_file_path.name}")
         except Exception as e:
-            print(f"{ORANGE}[WARNING]{RESET} Failed to save authentication data: {e}")
+            print(f"{YELLOW}[WARNING]{RESET} Failed to save authentication data: {e}")
 
     @staticmethod
     def load_auth_data(auth_file_path: str) -> Dict[str, Dict]:
@@ -91,7 +91,7 @@ class AuthDataHandler:
             print(f"{BLUE}[AUTH]{RESET} Loaded authentication data for {len(auth_data)} project(s) from {auth_path.name}")
             return auth_data
         except (json.JSONDecodeError, Exception) as e:
-            print(f"{ORANGE}[WARNING]{RESET} Failed to load authentication data: {e}")
+            print(f"{YELLOW}[WARNING]{RESET} Failed to load authentication data: {e}")
             return {}
 
     @staticmethod

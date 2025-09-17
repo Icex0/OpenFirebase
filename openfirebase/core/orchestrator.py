@@ -98,6 +98,26 @@ class OpenFirebaseOrchestrator:
 
             # Print start timestamp for all operations
             print(f"{BLUE}[INF]{RESET} {get_current_datetime()}")
+            
+            # Display cert/package warnings if applicable
+            should_show_warnings = (
+                # Remote Config scanning is requested
+                ((args.scan_config or args.scan_all) and (args.scan_project_id or args.scan_project_id_file)) or
+                # Or authentication is enabled (for any scanning type)
+                getattr(args, "check_with_auth", False)
+            )
+            
+            if should_show_warnings:
+                # Determine the appropriate warning message based on whether auth is enabled
+                if getattr(args, "check_with_auth", False):
+                    feature_name = "Authentication or Remote Config scanning"
+                else:
+                    feature_name = "Remote Config scanning"
+                    
+                if not args.cert_sha1:
+                    print(f"{YELLOW}[WARNING]{RESET} --cert-sha1 not provided. {feature_name} may fail without Android certificate SHA-1 hash.")
+                if not args.package_name:
+                    print(f"{YELLOW}[WARNING]{RESET} --package-name not provided. {feature_name} may fail without Android package name.")
 
             # Route to appropriate workflow
             if args.resume:
@@ -327,7 +347,7 @@ class OpenFirebaseOrchestrator:
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
             print(
-                f"{ORANGE}[WARNING]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id."
+                f"{RED}[ERROR]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id."
             )
 
         # Parse project IDs (comma-separated)
@@ -357,11 +377,6 @@ class OpenFirebaseOrchestrator:
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
             print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 403 responses with Firebase auth")
 
-            # Warn if cert_sha1 or package_name are missing for project ID mode
-            if not getattr(args, "cert_sha1", None):
-                print(f"{YELLOW}[WARNING]{RESET} --cert-sha1 not provided. Authenticated scanning may fail without Android certificate SHA-1 hash.")
-            if not getattr(args, "package_name", None):
-                print(f"{YELLOW}[WARNING]{RESET} --package-name not provided. Authenticated scanning may fail without Android package name.")
 
         # Initialize scanner and perform scanning
         scanner = FirebaseScanner(
@@ -402,7 +417,7 @@ class OpenFirebaseOrchestrator:
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
             print(
-                f"{ORANGE}[WARNING]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id-file."
+                f"{RED}[ERROR]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id-file."
             )
 
         # Read project IDs from file
@@ -441,11 +456,6 @@ class OpenFirebaseOrchestrator:
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
             print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 403 responses with Firebase auth")
 
-            # Warn if cert_sha1 or package_name are missing for project ID file mode
-            if not getattr(args, "cert_sha1", None):
-                print(f"{YELLOW}[WARNING]{RESET} --cert-sha1 not provided. Authenticated scanning may fail without Android certificate SHA-1 hash.")
-            if not getattr(args, "package_name", None):
-                print(f"{YELLOW}[WARNING]{RESET} --package-name not provided. Authenticated scanning may fail without Android package name.")
 
         # Initialize scanner
         scanner = FirebaseScanner(
@@ -553,14 +563,18 @@ class OpenFirebaseOrchestrator:
             firebase_items = extractor.process_apk(apk_path)
             pbar.update(1)
 
+        # Extract real package name
+        from ..utils import get_apk_package_name
+        package_name = get_apk_package_name(apk_path)
+
         # Display extracted items status
         from ..utils import format_firebase_items_status
-        status_msg = format_firebase_items_status(apk_path.stem, firebase_items, "Fast")
+        status_msg = format_firebase_items_status(package_name, firebase_items, "Fast")
         print(status_msg)
 
         if firebase_items:
             file_handler.save_single_result(
-                apk_path.stem, firebase_items, timestamped_output
+                package_name, firebase_items, timestamped_output
             )
 
         # Get results and display
@@ -577,14 +591,18 @@ class OpenFirebaseOrchestrator:
             jadx_extractor = JADXExtractor(apk_path.parent, processing_mode="single", timeout_seconds=timeout_seconds)
             firebase_items = jadx_extractor.process_file_with_progress(apk_path)
 
+            # Extract real package name
+            from ..utils import get_apk_package_name
+            package_name = get_apk_package_name(apk_path)
+
             # Display extracted items status
             from ..utils import format_firebase_items_status
-            status_msg = format_firebase_items_status(apk_path.stem, firebase_items, "JADX")
+            status_msg = format_firebase_items_status(package_name, firebase_items, "JADX")
             print(status_msg)
 
             if firebase_items:
                 file_handler.save_single_result(
-                    apk_path.stem, firebase_items, timestamped_output
+                    package_name, firebase_items, timestamped_output
                 )
 
             results = jadx_extractor.get_results()
@@ -1060,7 +1078,7 @@ class OpenFirebaseOrchestrator:
                 )
 
             print(
-                f"{BLUE}[INF]{RESET} Database scan results have been saved to {db_output_file}"
+                f"{BLUE}[INF]{RESET} Realtime Database read results have been saved to {db_output_file}"
             )
 
             if scans_performed > 1:
@@ -1108,7 +1126,7 @@ class OpenFirebaseOrchestrator:
                 )
 
             print(
-                f"{BLUE}[INF]{RESET} Storage scan results have been saved to {storage_output_file}"
+                f"{BLUE}[INF]{RESET} Storage read results have been saved to {storage_output_file}"
             )
 
             if scans_performed > 1:
@@ -1141,7 +1159,7 @@ class OpenFirebaseOrchestrator:
                         config_data, package_project_ids, config_output_file
                     )
                     print(
-                        f"{BLUE}[INF]{RESET} Remote Config scan results have been saved to {config_output_file}"
+                        f"{BLUE}[INF]{RESET} Remote Config read results have been saved to {config_output_file}"
                     )
 
                     if scans_performed > 1:
@@ -1178,7 +1196,7 @@ class OpenFirebaseOrchestrator:
                     config_data, package_project_ids=None, output_file=config_output_file
                 )
                 print(
-                    f"{BLUE}[INF]{RESET} Remote Config scan results have been saved to {config_output_file}"
+                    f"{BLUE}[INF]{RESET} Remote Config read results have been saved to {config_output_file}"
                 )
 
                 if scans_performed > 1:
@@ -1231,7 +1249,7 @@ class OpenFirebaseOrchestrator:
                 )
 
             print(
-                f"{BLUE}[INF]{RESET} Firestore scan results have been saved to {firestore_output_file}"
+                f"{BLUE}[INF]{RESET} Firestore read results have been saved to {firestore_output_file}"
             )
 
             if scans_performed > 1:
@@ -1343,7 +1361,7 @@ class OpenFirebaseOrchestrator:
                 )
 
             print(
-                f"{BLUE}[INF]{RESET} RTDB write results have been saved to {rtdb_write_output_file}"
+                f"{BLUE}[INF]{RESET} Realtime Database write results have been saved to {rtdb_write_output_file}"
             )
 
             if scans_performed > 1:
@@ -1478,6 +1496,13 @@ class OpenFirebaseOrchestrator:
                 for warning in warning_messages:
                     print(warning)
 
+        # Add authentication summary for single scans
+        if scans_performed == 1 and firebase_auth and getattr(args, "check_with_auth", False):
+            single_scan_output_file = create_output_path(
+                args.output_dir, "full_scan_output.txt", self.run_timestamp
+            )
+            self._save_auth_results_summary_to_file(scanner, firebase_auth, single_scan_output_file)
+
         # Display authentication results summary if authentication was used
         if firebase_auth and getattr(args, "check_with_auth", False):
             self._display_auth_results_summary(scanner, firebase_auth)
@@ -1491,8 +1516,14 @@ class OpenFirebaseOrchestrator:
 
         return 0
 
-    def _generate_auth_results_summary(self, scanner, firebase_auth):
+    def _generate_auth_results_summary(self, scanner, firebase_auth, colorize=True):
         """Generate authentication results summary as a list of strings."""
+        # Conditionally apply colors based on colorize parameter
+        if colorize:
+            from .config import RED, GREEN, LIME, YELLOW, GREY, GOLD, BLUE, RESET
+        else:
+            RED = GREEN = LIME = YELLOW = GREY = GOLD = BLUE = RESET = ""
+        
         lines = []
 
         # Get authentication summary from firebase_auth
@@ -1559,13 +1590,13 @@ class OpenFirebaseOrchestrator:
 
 
             if len(projects_with_db) > 0:
-                lines.append(f"Total projects with Realtime Database accessible with authentication: {len(projects_with_db)}")
+                lines.append(f"Read access on Realtime Database when authenticated: {len(projects_with_db)}")
             if len(projects_with_storage) > 0:
-                lines.append(f"Total projects with Storage buckets accessible with authentication: {len(projects_with_storage)}")
+                lines.append(f"Read access on Storage when authenticated: {len(projects_with_storage)}")
             if len(projects_with_firestore) > 0:
-                lines.append(f"Total projects with Firestore databases accessible with authentication: {len(projects_with_firestore)}")
+                lines.append(f"Read access on Firestore when authenticated: {len(projects_with_firestore)}")
             if firestore_collection_count > 0:
-                lines.append(f"Total authenticated Firestore collections found: {firestore_collection_count}")
+                lines.append(f"Read access on Firestore collections when authenticated: {firestore_collection_count}")
 
             lines.append(f"\n{YELLOW}[!]{RESET} Found {total_auth_success_urls} resource(s) that were protected but accessible with authentication!")
         else:
@@ -1592,7 +1623,7 @@ class OpenFirebaseOrchestrator:
             f.write("[AUTH] AUTHENTICATION SCAN SUMMARY\n")
             f.write("=" * 80 + "\n")
 
-            summary_lines = self._generate_auth_results_summary(scanner, firebase_auth)
+            summary_lines = self._generate_auth_results_summary(scanner, firebase_auth, colorize=False)
             for line in summary_lines:
                 f.write(line + "\n")
 
