@@ -133,28 +133,31 @@ def _kill_java_processes():
 
 
 def _kill_java_processes_windows():
-    """Kill Java processes on Windows."""
+    """Kill Java processes on Windows using PowerShell (Windows 11 compatible)."""
     try:
+        # Use PowerShell to get Java processes with CommandLine and ProcessId
+        powershell_cmd = [
+            "powershell", "-Command",
+            "Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'java.exe'} | "
+            "Where-Object {$_.CommandLine -like '*jadx*' -or $_.CommandLine -like '*apksigner*'} | "
+            "Select-Object ProcessId | ForEach-Object {$_.ProcessId}"
+        ]
+        
         result = subprocess.run(
-            ["wmic", "process", "where", "name='java.exe'", "get", "ProcessId,CommandLine", "/format:csv"],
-            capture_output=True, text=True, timeout=5
+            powershell_cmd,
+            capture_output=True, text=True, timeout=10
         )
         
-        if result.returncode == 0:
-            for line in result.stdout.strip().split('\n')[1:]:  # Skip header
-                if line.strip():
-                    parts = line.split(',')
-                    if len(parts) >= 3:
-                        command_line = ','.join(parts[1:-1])
-                        pid = parts[-1].strip()
-                        
-                        if ('jadx' in command_line.lower() or 
-                            'apksigner' in command_line.lower()):
-                            try:
-                                subprocess.run(["taskkill", "/F", "/PID", pid], 
-                                             capture_output=True, timeout=3)
-                            except:
-                                pass
+        if result.returncode == 0 and result.stdout.strip():
+            # Kill each process ID returned
+            for line in result.stdout.strip().split('\n'):
+                pid = line.strip()
+                if pid and pid.isdigit():
+                    try:
+                        subprocess.run(["taskkill", "/F", "/PID", pid], 
+                                     capture_output=True, timeout=3)
+                    except:
+                        pass
     except:
         pass
 

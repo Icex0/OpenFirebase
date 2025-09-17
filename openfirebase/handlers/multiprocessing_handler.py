@@ -13,13 +13,13 @@ def process_apk_multiprocessing(args_tuple) -> tuple:
     """Process a single APK file for multiprocessing.
 
     Args:
-        args_tuple: Tuple containing (apk_path, input_folder, fast_extract, output_file)
+        args_tuple: Tuple containing (apk_path, input_folder, fast_extract, output_file, timeout_seconds)
 
     Returns:
         Tuple of (package_name, firebase_items, success, [error], status_message)
 
     """
-    apk_path_str, input_folder, fast_extract, output_file = args_tuple
+    apk_path_str, input_folder, fast_extract, output_file, timeout_seconds = args_tuple
     apk_path = Path(apk_path_str)
     package_name = apk_path.stem
 
@@ -50,7 +50,7 @@ def process_apk_multiprocessing(args_tuple) -> tuple:
         else:
             from ..extractors.jadx_extractor import JADXExtractor
 
-            extractor = JADXExtractor(input_folder, processing_mode="directory")
+            extractor = JADXExtractor(input_folder, processing_mode="directory", timeout_seconds=timeout_seconds)
             firebase_items = extractor.process_file(apk_path)
             status_msg = format_firebase_items_status(
                 package_name, firebase_items, "JADX"

@@ -564,6 +564,15 @@ def main(
         help="Proxy for HTTP requests (format: protocol://host:port, e.g., http://127.0.0.1:8080)",
         rich_help_panel="Processing Options"
     ),
+    
+    # Timeout configuration
+    timeout: Optional[int] = Option(
+        None,
+        "-t", "--timeout",
+        help="Timeout for JADX decompilation in minutes (default: 30 minutes)",
+        min=1,
+        rich_help_panel="Processing Options"
+    ),
 
     # Authentication options
     check_with_auth: bool = Option(
@@ -657,6 +666,7 @@ def main(
     args.password = password
     args.resume_auth_file = str(validated_resume_auth_file) if validated_resume_auth_file else None
     args.exclude_project_id = exclude_project_id
+    args.timeout = timeout
 
     # Import here to avoid circular imports
     from ..core.orchestrator import OpenFirebaseOrchestrator

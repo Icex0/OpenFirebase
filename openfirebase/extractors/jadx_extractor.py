@@ -49,6 +49,7 @@ class JADXExtractor:
         input_folder: str,
         auto_install: bool = False,
         processing_mode: str = "directory",
+        timeout_seconds: int = None,
     ):
         """Initialize the extractor with the input folder path."""
         self.input_folder = Path(input_folder)
@@ -56,6 +57,7 @@ class JADXExtractor:
         self.results_lock = threading.Lock()  # Thread-safe access to results
         self.main_dir = os.path.dirname(os.path.realpath(__file__))
         self.processing_mode = processing_mode  # "single" or "directory"
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else DEFAULT_TIMEOUT_SECONDS
 
         # Determine JADX path (system or local)
         self.jadx_path = self._get_jadx_path()
@@ -250,7 +252,7 @@ class JADXExtractor:
 
             # Wait for configured timeout initially
             try:
-                stdout, stderr = process.communicate(timeout=DEFAULT_TIMEOUT_SECONDS)
+                stdout, stderr = process.communicate(timeout=self.timeout_seconds)
 
                 # Check if output directory actually contains files (more reliable than exit code)
                 output_files = list(output_dir.rglob("*"))
@@ -262,7 +264,7 @@ class JADXExtractor:
             except subprocess.TimeoutExpired:
                 # Process exceeded timeout - terminate automatically
                 process_pid = process.pid
-                timeout_minutes = DEFAULT_TIMEOUT_SECONDS // 60
+                timeout_minutes = self.timeout_seconds // 60
                 print(f"\n{BLUE}[INF]{RESET} Decompilation of {apk_path.name} exceeded {timeout_minutes}-minute timeout (PID: {process_pid})")
                 print(f"{BLUE}[INF]{RESET} Terminating decompilation process (PID: {process_pid})")
 

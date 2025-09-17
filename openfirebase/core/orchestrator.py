@@ -39,6 +39,14 @@ from .config import BLUE, GREEN, ORANGE, RED, RESET, YELLOW
 
 class OpenFirebaseOrchestrator:
     """Main orchestrator for the OpenFirebase application."""
+    
+    def _get_timeout_seconds(self, args):
+        """Convert timeout from minutes to seconds, or use default."""
+        if hasattr(args, 'timeout') and args.timeout is not None:
+            return args.timeout * 60  # Convert minutes to seconds
+        else:
+            from .config import DEFAULT_TIMEOUT_SECONDS
+            return DEFAULT_TIMEOUT_SECONDS
 
     def __init__(self):
         self.run_timestamp = generate_timestamp()
@@ -520,7 +528,7 @@ class OpenFirebaseOrchestrator:
             )
         else:
             results = self._process_single_file_jadx(
-                apk_path, timestamped_output, file_handler
+                apk_path, timestamped_output, file_handler, args
             )
 
         if results is None:
@@ -559,13 +567,14 @@ class OpenFirebaseOrchestrator:
         results = extractor.get_results()
         return results
 
-    def _process_single_file_jadx(self, apk_path, timestamped_output, file_handler):
+    def _process_single_file_jadx(self, apk_path, timestamped_output, file_handler, args):
         """Process single file with JADX extraction."""
         print(
             f"{BLUE}[INF]{RESET} Processing single APK file with JADX decompilation: {apk_path.name}"
         )
         try:
-            jadx_extractor = JADXExtractor(apk_path.parent, processing_mode="single")
+            timeout_seconds = self._get_timeout_seconds(args)
+            jadx_extractor = JADXExtractor(apk_path.parent, processing_mode="single", timeout_seconds=timeout_seconds)
             firebase_items = jadx_extractor.process_file_with_progress(apk_path)
 
             # Display extracted items status
@@ -597,8 +606,9 @@ class OpenFirebaseOrchestrator:
                 f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected"
             )
         else:
+            timeout_seconds = self._get_timeout_seconds(args)
             extractor = JADXExtractor(
-                args.apk_dir, processing_mode="directory"
+                args.apk_dir, processing_mode="directory", timeout_seconds=timeout_seconds
             )
             print(f"{BLUE}[INF]{RESET} Using JADX decompilation for APK processing...")
 
@@ -670,12 +680,14 @@ class OpenFirebaseOrchestrator:
                     leave=True,
                 ) as pbar:
                     # Prepare arguments for multiprocessing
+                    timeout_seconds = self._get_timeout_seconds(args)
                     process_args = [
                         (
                             str(apk_path),
                             str(args.apk_dir),
                             args.fast_extract,
                             timestamped_output,
+                            timeout_seconds,
                         )
                         for apk_path in apk_files
                     ]
