@@ -444,21 +444,20 @@ def extract_config_data(results: Dict) -> Dict[str, Dict[str, str]]:
                 if project_index < len(app_ids):
                     config_data[project_id]["app_id"] = app_ids[project_index]
 
-            # Only add certificates and package_name to the main project ID
-            # (the one from Firebase_Project_ID field) since certificate is specific to that project
-            if project_id == main_project_id:
-                if cert_sha1_list:
-                    # Add legacy cert_sha1 for backward compatibility (first certificate)
-                    config_data[project_id]["cert_sha1"] = cert_sha1_list[0]
-                    # Add new cert_sha1_list for multiple certificate support
-                    config_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
+            # Add certificates and package_name to ALL project IDs from the same APK
+            # since they all come from the same Android app with the same certificate
+            if cert_sha1_list:
+                # Add legacy cert_sha1 for backward compatibility (first certificate)
+                config_data[project_id]["cert_sha1"] = cert_sha1_list[0]
+                # Add new cert_sha1_list for multiple certificate support
+                config_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
 
-                # Use APK package name if available, otherwise fall back to APK filename
-                if apk_package_name:
-                    config_data[project_id]["package_name"] = apk_package_name
-                else:
-                    # Fallback to using the APK filename (results key) as package name
-                    config_data[project_id]["package_name"] = package_name
+            # Use APK package name if available, otherwise fall back to APK filename
+            if apk_package_name:
+                config_data[project_id]["package_name"] = apk_package_name
+            else:
+                # Fallback to using the APK filename (results key) as package name
+                config_data[project_id]["package_name"] = package_name
 
     return config_data
 
@@ -567,14 +566,6 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                 # Add additional fields for main project
                 if project_index is not None and project_index < len(app_ids):
                     auth_data[project_id]["app_id"] = app_ids[project_index]
-                if cert_sha1_list:
-                    auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
-
-                # Use APK package name if available, otherwise fall back to APK filename
-                if apk_package_name:
-                    auth_data[project_id]["package_name"] = apk_package_name
-                else:
-                    auth_data[project_id]["package_name"] = package_name
             else:
                 # This is another project ID (not the main Firebase_Project_ID)
                 # Use positional Google_API_Key for non-main projects, fallback to Other_Google_API_Key
@@ -590,14 +581,17 @@ def extract_enhanced_auth_data(results: Dict) -> Dict[str, Dict]:
                 # Also assign app_id positionally for other projects
                 if project_index is not None and project_index < len(app_ids):
                     auth_data[project_id]["app_id"] = app_ids[project_index]
-                if cert_sha1_list:
-                    auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
 
-                # Use package name from main project or APK filename
-                if apk_package_name:
-                    auth_data[project_id]["package_name"] = apk_package_name
-                else:
-                    auth_data[project_id]["package_name"] = package_name
+            # Add certificate and package name to ALL project IDs from the same APK
+            # since they all come from the same Android app with the same certificate
+            if cert_sha1_list:
+                auth_data[project_id]["cert_sha1_list"] = cert_sha1_list.copy()
+
+            # Use APK package name if available, otherwise fall back to APK filename
+            if apk_package_name:
+                auth_data[project_id]["package_name"] = apk_package_name
+            else:
+                auth_data[project_id]["package_name"] = package_name
 
     return auth_data
 

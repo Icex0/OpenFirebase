@@ -248,6 +248,7 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--output-dir` | `-o` | Output directory for all generated files (default: results/) |
 | `--processes` | `-j` | Number of processes for concurrent APK processing (default: min(5, CPU count), max: 5) |
 | `--proxy` | `-x` | Proxy for HTTP requests (format: protocol://host:port, e.g., http://127.0.0.1:8080) |
+| `--timeout` | `-t` | Timeout for JADX decompilation in minutes (default: 30 minutes) |
 
 ### Remote Config Credentials
 | Argument | Short | Description |
