@@ -26,6 +26,11 @@
       "description": "Other Google App IDs with Google format from strings.xml",
       "capture_group": 1
     },
+    "Other_Firebase_Project_ID": {
+      "pattern": "<string name=\"[^\"]*project_id[^\"]*\">([a-z0-9-]+)</string>",
+      "description": "Firebase project ID from strings.xml where string name contains 'project_id'",
+      "capture_group": 1
+    },
     "Firebase_Database_US": {
       "pattern": "([a-z0-9-]+)\\.firebaseio\\.com/?[^\\s\"'<>]*",
       "description": "Firebase Realtime Database URLs (US region) - captures project ID",

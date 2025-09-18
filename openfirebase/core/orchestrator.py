@@ -375,7 +375,7 @@ class OpenFirebaseOrchestrator:
         if getattr(args, "check_with_auth", False):
             from ..core.auth import FirebaseAuth
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
-            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 403 responses with Firebase auth")
+            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
 
 
         # Initialize scanner and perform scanning
@@ -454,7 +454,7 @@ class OpenFirebaseOrchestrator:
         if getattr(args, "check_with_auth", False):
             from ..core.auth import FirebaseAuth
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
-            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 403 responses with Firebase auth")
+            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
 
 
         # Initialize scanner
@@ -911,7 +911,7 @@ class OpenFirebaseOrchestrator:
         if getattr(args, "check_with_auth", False):
             from ..core.auth import FirebaseAuth
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
-            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 403 responses with Firebase auth")
+            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
 
         # Initialize scanner
         scanner = FirebaseScanner(

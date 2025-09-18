@@ -1695,121 +1695,54 @@ class BaseScanner(ABC):
                     project_to_packages,
                 )
 
-            # Combined summary (matches console output when using --read-all)
-            f.write("\n[UNAUTH] SCAN SUMMARY\n")
-            f.write("=" * 80 + "\n")
-
-            # Get counts for all scan types and calculate totals
+            # Individual summaries (matches console output format)
             total_public = 0
-            scan_data = []
-
-            if db_scan_results:
-                db_counts = self._count_scan_results(db_scan_results, "database")
-                db_labels = self._get_summary_labels("database")
-                scan_data.append(("DATABASES", db_counts, db_labels, "database"))
-                total_public += db_counts["public_count"]
-
-            if storage_scan_results:
-                storage_counts = self._count_scan_results(
-                    storage_scan_results, "storage"
-                )
-                storage_labels = self._get_summary_labels("storage")
-                scan_data.append(("STORAGE", storage_counts, storage_labels, "storage"))
-                total_public += storage_counts["public_count"]
-
-            if config_scan_results:
-                config_counts = self._count_scan_results(config_scan_results, "config")
-                config_labels = self._get_summary_labels("config")
-                scan_data.append(
-                    ("REMOTE CONFIG", config_counts, config_labels, "config")
-                )
-                total_public += config_counts["public_count"]
-
-            if firestore_scan_results:
-                firestore_counts = self._count_scan_results(
-                    firestore_scan_results, "firestore"
-                )
-                firestore_labels = self._get_summary_labels("firestore")
-                scan_data.append(
-                    ("FIRESTORE", firestore_counts, firestore_labels, "firestore")
-                )
-                total_public += firestore_counts["public_count"]
-
-            if storage_write_results:
-                storage_write_counts = self._count_scan_results(
-                    storage_write_results, "storage"
-                )
-                storage_write_labels = self._get_summary_labels("storage")
-                scan_data.append(
-                    (
-                        "STORAGE WRITE RESULTS",
-                        storage_write_counts,
-                        storage_write_labels,
-                        "storage",
-                    )
-                )
-                total_public += storage_write_counts["public_count"]
-
-            if rtdb_write_results:
-                rtdb_write_counts = self._count_scan_results(
-                    rtdb_write_results, "database"
-                )
-                rtdb_write_labels = self._get_summary_labels("database")
-                scan_data.append(
-                    (
-                        "RTDB WRITE RESULTS",
-                        rtdb_write_counts,
-                        rtdb_write_labels,
-                        "database",
-                    )
-                )
-                total_public += rtdb_write_counts["public_count"]
-
-            if firestore_write_results:
-                firestore_write_counts = self._count_scan_results(
-                    firestore_write_results, "firestore"
-                )
-                firestore_write_labels = self._get_summary_labels("firestore")
-                scan_data.append(
-                    (
-                        "FIRESTORE WRITE RESULTS",
-                        firestore_write_counts,
-                        firestore_write_labels,
-                        "firestore",
-                    )
-                )
-                total_public += firestore_write_counts["public_count"]
-
-            # Write summary for each scan type (individual summaries like console)
-            for section_name, counts, labels, resource_type in scan_data:
-                f.write(f"{section_name}:\n")
-                f.write(f"  Total projects scanned: {counts['total_projects']}\n")
-                f.write(f"  {labels['public']}: {counts['public_count']}\n")
-                f.write(f"  {labels['protected']}: {counts['protected_count']}\n")
-
-                # Only show not_found for database and storage
-                if resource_type in ["database", "storage"]:
-                    f.write(f"  {labels['not_found']}: {counts['not_found_count']}\n")
-                elif resource_type == "config":
-                    f.write(
-                        f"  {labels['missing_config']}: {counts['missing_config_count']}\n"
-                    )
-                    f.write(f"  {labels['no_config']}: {counts['no_config_count']}\n")
+            
+            # Helper function to write individual summary
+            def write_individual_summary(scan_results, scan_type, resource_type):
+                nonlocal total_public
+                # Map scan types to display names (same as console output)
+                type_mapping = {
+                    "DATABASES": "FIREBASE REALTIME DATABASE READ",
+                    "STORAGE": "FIREBASE STORAGE READ", 
+                    "STORAGE WRITE": "FIREBASE STORAGE WRITE",
+                    "CONFIG": "REMOTE CONFIG",
+                    "FIRESTORE": "FIREBASE FIRESTORE READ",
+                    "FIRESTORE WRITE": "FIREBASE FIRESTORE WRITE",
+                    "REALTIME DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE"
+                }
+                
+                display_name = type_mapping.get(scan_type, scan_type)
+                f.write(f"\n" + "=" * 80 + "\n")
+                f.write(f"[UNAUTH] SCAN SUMMARY {display_name}\n")
+                f.write("=" * 80 + "\n")
+                
+                counts = self._count_scan_results(scan_results, resource_type)
+                labels = self._get_summary_labels(resource_type)
+                total_public += counts["public_count"]
+                
+                f.write(f"Total projects scanned: {counts['total_projects']}\n")
+                f.write(f"{labels['public']}: {counts['public_count']}\n")
+                f.write(f"{labels['protected']}: {counts['protected_count']}\n")
+                
+                if resource_type not in ["config", "firestore"]:  # Config and Firestore don't have "not found" status
+                    f.write(f"{labels['not_found']}: {counts['not_found_count']}\n")
+                
+                # Add resource-specific counts
+                if resource_type == "config":
+                    f.write(f"{labels['missing_config']}: {counts['missing_config_count']}\n")
+                    f.write(f"{labels['no_config']}: {counts['no_config_count']}\n")
+                elif resource_type == "database":
+                    f.write(f"{labels['locked']}: {counts['locked_count']}\n")
+                elif resource_type == "storage":
+                    f.write(f"{labels['no_listing']}: {counts['no_listing_count']}\n")
                 elif resource_type == "firestore":
-                    f.write(
-                        f"  {labels['total_open_collections']}: {counts['total_open_collections_count']}\n"
-                    )
-
-                # Add resource-specific counts for databases
-                if resource_type == "database":
-                    f.write(f"  {labels['locked']}: {counts['locked_count']}\n")
-
+                    f.write(f"{labels['total_open_collections']}: {counts['total_open_collections_count']}\n")
+                
                 if counts["rate_limited_count"] > 0:
-                    f.write(
-                        f"  {labels['rate_limited']}: {counts['rate_limited_count']}\n"
-                    )
-                f.write(f"  {labels['other']}: {counts['other_count']}\n")
-
+                    f.write(f"{labels['rate_limited']}: {counts['rate_limited_count']}\n")
+                f.write(f"{labels['other']}: {counts['other_count']}\n")
+                
                 # Add warnings for public resources
                 if counts["public_count"] > 0:
                     if resource_type == "storage":
@@ -1820,21 +1753,39 @@ class BaseScanner(ABC):
                         resource_word = "Firestore databases"
                     else:
                         resource_word = "databases"
-                    f.write(
-                        f"  WARNING: {counts['public_count']} public {resource_word} found!\n"
-                    )
-                    f.write(
-                        f"  These {resource_word} are accessible without authentication.\n"
-                    )
+                    
+                    f.write(f"\n[!]  WARNING: {counts['public_count']} public {resource_word} found!\n")
+                    f.write(f"[!]  These {resource_word} are accessible without authentication.\n")
+                    
+                    # Add special message for config resources
+                    if resource_type == "config":
+                        f.write("[!]  It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:\n")
+                        f.write("[!]  trufflehog filesystem remote_config_results\n")  
+                        f.write("[!]  gitleaks dir remote_config_results -v\n")
 
-                f.write("\n")
+            # Write individual summaries for each scan type
+            if db_scan_results:
+                write_individual_summary(db_scan_results, "DATABASES", "database")
 
-            # Overall warning
-            if total_public > 0:
-                f.write(
-                    f"OVERALL WARNING: {total_public} total public Firebase resources found!\n"
-                )
-                f.write("These resources are accessible without authentication.\n")
+            if storage_scan_results:
+                write_individual_summary(storage_scan_results, "STORAGE", "storage")
+
+            if config_scan_results:
+                write_individual_summary(config_scan_results, "CONFIG", "config")
+
+            if firestore_scan_results:
+                write_individual_summary(firestore_scan_results, "FIRESTORE", "firestore")
+
+            if storage_write_results:
+                write_individual_summary(storage_write_results, "STORAGE WRITE", "storage")
+
+            if rtdb_write_results:
+                write_individual_summary(rtdb_write_results, "REALTIME DATABASE WRITE", "database")
+
+            if firestore_write_results:
+                write_individual_summary(firestore_write_results, "FIRESTORE WRITE", "firestore")
+
+            f.write("\n")
 
         return warning_messages
 

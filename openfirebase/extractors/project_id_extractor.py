@@ -31,8 +31,8 @@ class ProjectIDExtractor:
         project_ids = set()
 
         for header, url in firebase_items:
-            # If it's already a Firebase_Project_ID, use it directly
-            if header == "Firebase_Project_ID":
+            # If it's already a Firebase_Project_ID or Other_Firebase_Project_ID, use it directly
+            if header in ["Firebase_Project_ID", "Other_Firebase_Project_ID"]:
                 if url not in INVALID_PROJECT_IDS:
                     # Remove "-default-rtdb" suffix if present
                     clean_project_id = url.replace("-default-rtdb", "")
@@ -47,6 +47,7 @@ class ProjectIDExtractor:
                 # Skip patterns that don't contain URLs (like Firebase_Project_ID, Firestore collections)
                 if pattern_name in [
                     "Firebase_Project_ID",
+                    "Other_Firebase_Project_ID",
                     "Google_API_Key",
                     "Other_Google_API_Key",
                     "Google_App_ID",
