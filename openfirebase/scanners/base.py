@@ -68,7 +68,8 @@ class BaseScanner(ABC):
         )
 
         # Track authentication results
-        self.auth_success_urls: Set[str] = set()  # URLs that failed unauth but succeeded with auth
+        self.read_auth_success_urls: Set[str] = set()  # URLs that failed unauth but succeeded with auth for read operations
+        self.write_auth_success_urls: Set[str] = set()  # URLs that failed unauth but succeeded with auth for write operations
         self.authenticated_results: Dict[str, Dict[str, str]] = {}  # Store authenticated results for display
         self.all_authenticated_results: Dict[str, Dict[str, Dict[str, str]]] = {}  # Store all authenticated results by project_id
 
@@ -202,9 +203,11 @@ class BaseScanner(ABC):
         if response.status_code in [401, 403] and self.firebase_auth:
             project_id = self._extract_project_id_from_url(url)
             if project_id:
+                # Determine operation type based on HTTP method
+                operation_type = "write" if method.upper() in ["POST", "PUT", "DELETE"] else "read"
                 # Try to get or create auth token for this project
                 auth_response = self._try_authenticated_request(
-                    url, method, timeout=self.timeout, **request_kwargs
+                    url, method, operation_type=operation_type, timeout=self.timeout, **request_kwargs
                 )
                 # Note: _try_authenticated_request now stores the auth result internally
                 # We always continue to show the original result, auth results shown separately
@@ -298,6 +301,7 @@ class BaseScanner(ABC):
         self,
         url: str,
         method: str = "GET",
+        operation_type: str = "read",
         **kwargs
     ) -> Optional[requests.Response]:
         """Try to make an authenticated request if Firebase auth is available.
@@ -305,6 +309,7 @@ class BaseScanner(ABC):
         Args:
             url: URL to request
             method: HTTP method ('GET', 'POST', etc.)
+            operation_type: Type of operation ('read' or 'write') for tracking authentication successes
             **kwargs: Additional arguments for the request
             
         Returns:
@@ -374,7 +379,10 @@ class BaseScanner(ABC):
                         auth_result["has_data"] = True
 
                 if should_track:
-                    self.auth_success_urls.add(url)
+                    if operation_type == "write":
+                        self.write_auth_success_urls.add(url)
+                    else:
+                        self.read_auth_success_urls.add(url)
             elif response.status_code == 401:
                 auth_result["message"] = "Unauthorized (even with auth)"
                 auth_result["security"] = "PROTECTED"
@@ -403,20 +411,28 @@ class BaseScanner(ABC):
         except requests.exceptions.RequestException:
             return None
 
-    def get_auth_success_urls(self) -> Set[str]:
-        """Get URLs that failed unauthenticated but succeeded with authentication.
+    def get_read_auth_success_urls(self) -> Set[str]:
+        """Get URLs that failed unauthenticated but succeeded with authentication for read operations.
         
         Returns:
-            Set of URLs that required authentication
-
+            Set of URLs that succeeded with authentication for read operations
         """
-        return self.auth_success_urls.copy()
+        return self.read_auth_success_urls.copy()
+    
+    def get_write_auth_success_urls(self) -> Set[str]:
+        """Get URLs that failed unauthenticated but succeeded with authentication for write operations.
+        
+        Returns:
+            Set of URLs that succeeded with authentication for write operations
+        """
+        return self.write_auth_success_urls.copy()
 
     def clear_all_authenticated_results(self):
         """Clear all stored authenticated results."""
         self.all_authenticated_results.clear()
         self.authenticated_results.clear()
-        self.auth_success_urls.clear()
+        self.read_auth_success_urls.clear()
+        self.write_auth_success_urls.clear()
 
     def _display_and_clear_authenticated_results(self, scan_results, scan_type="DATABASES"):
         """Display authenticated results in separate section with proper header and clear them."""
@@ -1232,7 +1248,7 @@ class BaseScanner(ABC):
                         f.write(f"Content: {result['response_content']}\n")
 
                     status_message = self._get_status_message(
-                        status, security, message, result, resource_type
+                        status, security, message, result, resource_type, colorize=False
                     )
                     f.write(f"{status_message}\n")
                     f.write("\n")
@@ -1259,10 +1275,10 @@ class BaseScanner(ABC):
                 else:
                     f.write(f"- {project_id}\n")
 
-        # For databases, count individual URLs; for other resources, count projects
-        if resource_type == "database":
+        # For databases (read and write), count individual URLs; for other resources, count projects
+        if "database" in resource_type.lower():
             total_open_urls = sum(len(results) for results in open_results.values())
-            warning_message = f"{YELLOW}[!]{RESET}  {total_open_urls} open {resource_type}(s) found! Details saved to {open_file}"
+            warning_message = f"{YELLOW}[!]{RESET}  {total_open_urls} open {resource_type.lower()}(s) found! Details saved to {open_file}"
         else:
             warning_message = f"{YELLOW}[!]{RESET}  {len(open_results)} open {resource_type}(s) found! Details saved to {open_file}"
 

@@ -1530,73 +1530,117 @@ class OpenFirebaseOrchestrator:
         auth_summary = firebase_auth.get_auth_summary()
 
         # Get authentication success summary from scanner
-        auth_success_summary = scanner.get_auth_success_summary()
+        read_auth_success_summary = scanner.get_read_auth_success_summary()
+        write_auth_success_summary = scanner.get_write_auth_success_summary()
 
         # Get authenticated results to check which collections actually have data
         authenticated_results = scanner.get_authenticated_results()
 
         # Count total successful authenticated URLs
-        total_auth_success_urls = sum(len(urls) for urls in auth_success_summary.values())
+        total_read_auth_success_urls = sum(len(urls) for urls in read_auth_success_summary.values())
+        total_write_auth_success_urls = sum(len(urls) for urls in write_auth_success_summary.values())
+        total_auth_success_urls = total_read_auth_success_urls + total_write_auth_success_urls
 
         lines.append(f"Firebase account creation attempts: {auth_summary['total_projects']}")
         lines.append(f"  Successful authentications: {auth_summary['successful_auths']}")
         lines.append(f"  Failed authentications: {auth_summary['failed_auths']}\n")
 
-        if total_auth_success_urls > 0:
-            # Count projects that had any authenticated resources
-            auth_projects = set()
-            projects_with_db = set()
-            projects_with_storage = set()
-            projects_with_firestore = set()
-            firestore_collection_count = 0
+        # Helper function to extract project ID from URL
+        def extract_project_id_from_url(url):
+            if "firestore.googleapis.com" in url:
+                return url.split("projects/")[1].split("/")[0] if "projects/" in url else None
+            elif "firebaseio.com" in url or "firebasedatabase.app" in url:
+                return url.split("//")[1].split("-")[0] if "//" in url else None
+            elif "firebasestorage.googleapis.com" in url:
+                import re
+                appspot_match = re.search(r"/b/([^/]+)\.appspot\.com/", url)
+                if appspot_match:
+                    return appspot_match.group(1)
+                firebasestorage_match = re.search(r"/b/([^/]+)\.firebasestorage\.app/", url)
+                if firebasestorage_match:
+                    return firebasestorage_match.group(1)
+            return None
 
-            for _, urls in auth_success_summary.items():
+        if total_auth_success_urls > 0:
+            # Count projects with read access
+            read_projects_with_db = set()
+            read_projects_with_storage = set()
+            read_projects_with_firestore = set()
+            read_firestore_collection_count = 0
+
+            # Count projects with write access
+            write_projects_with_db = set()
+            write_projects_with_storage = set()
+            write_projects_with_firestore = set()
+            write_firestore_collection_count = 0
+
+            # Process read access
+            for service_type, urls in read_auth_success_summary.items():
                 if urls:
                     for url in urls:
-                        # Extract project ID from URL to count unique projects
-                        if "firestore.googleapis.com" in url:
-                            project_match = url.split("projects/")[1].split("/")[0] if "projects/" in url else None
-                            if project_match:
-                                auth_projects.add(project_match)
-                                projects_with_firestore.add(project_match)  # Any accessible collection means database access
-
-                                # Only count collections that actually have data
+                        project_match = extract_project_id_from_url(url)
+                        if project_match:
+                            if "firestore.googleapis.com" in url:
+                                read_projects_with_firestore.add(project_match)
+                                # Count collections that actually have data
                                 for proj_id, proj_results in authenticated_results.items():
                                     if url in proj_results and proj_results[url].get("has_data", True):
-                                        firestore_collection_count += 1
+                                        read_firestore_collection_count += 1
                                         break
-                        elif "firebaseio.com" in url or "firebasedatabase.app" in url:
-                            project_match = url.split("//")[1].split("-")[0] if "//" in url else None
-                            if project_match:
-                                auth_projects.add(project_match)
-                                projects_with_db.add(project_match)
-                        elif "firebasestorage.googleapis.com" in url:
-                            # Extract project ID from Firebase Storage URLs
-                            # Pattern: https://firebasestorage.googleapis.com/v0/b/PROJECT-ID.appspot.com/o
-                            # Pattern: https://firebasestorage.googleapis.com/v0/b/PROJECT-ID.firebasestorage.app/o
-                            import re
-                            project_match = None
-                            appspot_match = re.search(r"/b/([^/]+)\.appspot\.com/", url)
-                            if appspot_match:
-                                project_match = appspot_match.group(1)
-                            else:
-                                firebasestorage_match = re.search(r"/b/([^/]+)\.firebasestorage\.app/", url)
-                                if firebasestorage_match:
-                                    project_match = firebasestorage_match.group(1)
+                            elif "firebaseio.com" in url or "firebasedatabase.app" in url:
+                                read_projects_with_db.add(project_match)
+                            elif "firebasestorage.googleapis.com" in url:
+                                read_projects_with_storage.add(project_match)
 
-                            if project_match:
-                                auth_projects.add(project_match)
-                                projects_with_storage.add(project_match)
+            # Process write access
+            for service_type, urls in write_auth_success_summary.items():
+                if urls:
+                    for url in urls:
+                        project_match = extract_project_id_from_url(url)
+                        if project_match:
+                            if "firestore.googleapis.com" in url:
+                                write_projects_with_firestore.add(project_match)
+                                # Count collections that actually have data
+                                for proj_id, proj_results in authenticated_results.items():
+                                    if url in proj_results and proj_results[url].get("has_data", True):
+                                        write_firestore_collection_count += 1
+                                        break
+                            elif "firebaseio.com" in url or "firebasedatabase.app" in url:
+                                write_projects_with_db.add(project_match)
+                            elif "firebasestorage.googleapis.com" in url:
+                                write_projects_with_storage.add(project_match)
 
+            # Display read access counts (counting individual URLs like unauthenticated)
+            read_db_urls = len([url for urls in read_auth_success_summary.values() for url in urls if "firebaseio.com" in url or "firebasedatabase.app" in url])
+            if read_db_urls > 0:
+                lines.append(f"Read access on Realtime Database when authenticated: {read_db_urls}")
+            
+            read_storage_urls = len([url for urls in read_auth_success_summary.values() for url in urls if "firebasestorage.googleapis.com" in url])
+            if read_storage_urls > 0:
+                lines.append(f"Read access on Storage when authenticated: {read_storage_urls}")
+            
+            read_firestore_urls = len([url for urls in read_auth_success_summary.values() for url in urls if "firestore.googleapis.com" in url])
+            if read_firestore_urls > 0:
+                lines.append(f"Read access on Firestore when authenticated: {read_firestore_urls}")
+            
+            if read_firestore_collection_count > 0:
+                lines.append(f"Read access on Firestore collections when authenticated: {read_firestore_collection_count}")
 
-            if len(projects_with_db) > 0:
-                lines.append(f"Read access on Realtime Database when authenticated: {len(projects_with_db)}")
-            if len(projects_with_storage) > 0:
-                lines.append(f"Read access on Storage when authenticated: {len(projects_with_storage)}")
-            if len(projects_with_firestore) > 0:
-                lines.append(f"Read access on Firestore when authenticated: {len(projects_with_firestore)}")
-            if firestore_collection_count > 0:
-                lines.append(f"Read access on Firestore collections when authenticated: {firestore_collection_count}")
+            # Display write access counts (counting individual URLs like unauthenticated)
+            write_db_urls = len([url for urls in write_auth_success_summary.values() for url in urls if "firebaseio.com" in url or "firebasedatabase.app" in url])
+            if write_db_urls > 0:
+                lines.append(f"Write access on Realtime Database when authenticated: {write_db_urls}")
+            
+            write_storage_urls = len([url for urls in write_auth_success_summary.values() for url in urls if "firebasestorage.googleapis.com" in url])
+            if write_storage_urls > 0:
+                lines.append(f"Write access on Storage when authenticated: {write_storage_urls}")
+            
+            write_firestore_urls = len([url for urls in write_auth_success_summary.values() for url in urls if "firestore.googleapis.com" in url])
+            if write_firestore_urls > 0:
+                lines.append(f"Write access on Firestore when authenticated: {write_firestore_urls}")
+            
+            if write_firestore_collection_count > 0:
+                lines.append(f"Write access on Firestore collections when authenticated: {write_firestore_collection_count}")
 
             lines.append(f"\n{YELLOW}[!]{RESET} Found {total_auth_success_urls} resource(s) that were protected but accessible with authentication!")
         else:

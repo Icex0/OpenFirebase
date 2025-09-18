@@ -277,17 +277,30 @@ class FirebaseScanner:
             print_warnings,
         )
 
-    def get_auth_success_summary(self) -> Dict[str, Set[str]]:
-        """Get summary of authentication successes from all scanners.
+    def get_read_auth_success_summary(self) -> Dict[str, Set[str]]:
+        """Get summary of read authentication successes from all scanners.
         
         Returns:
-            Dictionary mapping scanner types to sets of URLs that required authentication
+            Dictionary mapping scanner types to sets of URLs that required authentication for read operations
 
         """
         return {
-            "database": self.database_scanner.get_auth_success_urls(),
-            "storage": self.storage_scanner.get_auth_success_urls(),
-            "firestore": self.firestore_scanner.get_auth_success_urls(),
+            "database": self.database_scanner.get_read_auth_success_urls(),
+            "storage": self.storage_scanner.get_read_auth_success_urls(),
+            "firestore": self.firestore_scanner.get_read_auth_success_urls(),
+        }
+    
+    def get_write_auth_success_summary(self) -> Dict[str, Set[str]]:
+        """Get summary of write authentication successes from all scanners.
+        
+        Returns:
+            Dictionary mapping scanner types to sets of URLs that required authentication for write operations
+
+        """
+        return {
+            "database": self.database_scanner.get_write_auth_success_urls(),
+            "storage": self.storage_scanner.get_write_auth_success_urls(),
+            "firestore": self.firestore_scanner.get_write_auth_success_urls(),
         }
 
     def get_authenticated_results(self) -> Dict[str, Dict[str, Dict[str, str]]]:

@@ -324,7 +324,7 @@ class FirestoreScanner(BaseScanner):
                                             project_results[url] = result
                                             found_collections.append(collection_name)
                                             # Only add to auth success tracking if collection has actual data
-                                            self.auth_success_urls.add(url)
+                                            self.read_auth_success_urls.add(url)  # Track as read operation
                                             print(f"   {LIME}[+]{RESET} Found public collection with data (authenticated): {collection_name}")
                                     except (ValueError, json.JSONDecodeError):
                                         # Can't parse JSON, treat as having data
@@ -338,7 +338,7 @@ class FirestoreScanner(BaseScanner):
                                         project_results[url] = result
                                         found_collections.append(collection_name)
                                         # Only add to auth success tracking if collection has actual data
-                                        self.auth_success_urls.add(url)
+                                        self.read_auth_success_urls.add(url)  # Track as read operation
                                         print(f"   {LIME}[+]{RESET} Found public collection with data (authenticated): {collection_name}")
                                 # Don't add failed/protected collections to results to avoid verbose output
                             except Exception:
