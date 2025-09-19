@@ -100,11 +100,13 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} {get_current_datetime()}")
             
             # Display cert/package warnings if applicable
+            # Don't show warnings in file (-f) or directory (-d) modes since cert-sha1 and package-name are extracted from APK files
+            is_apk_extraction_mode = args.file or args.apk_dir
             should_show_warnings = (
-                # Remote Config scanning is requested
+                # Remote Config scanning is requested in project ID modes (not APK extraction modes)
                 ((args.scan_config or args.scan_all) and (args.scan_project_id or args.scan_project_id_file)) or
-                # Or authentication is enabled (for any scanning type)
-                getattr(args, "check_with_auth", False)
+                # Or authentication is enabled for non-APK extraction modes (since APK modes extract these automatically)
+                (getattr(args, "check_with_auth", False) and not is_apk_extraction_mode)
             )
             
             if should_show_warnings:
@@ -1716,7 +1718,8 @@ class OpenFirebaseOrchestrator:
         failed_auths = 0
         validated_projects = {}  # Maps auth_project_id -> validated_project_id
 
-        for project_id in project_ids:
+        # Process project IDs in sorted order
+        for project_id in sorted(project_ids):
             project_auth_data = auth_data.get(project_id)
             if not project_auth_data or not project_auth_data.get("api_keys"):
                 print(f"{YELLOW}[AUTH]{RESET} No API keys available for project {project_id}, skipping authentication")
