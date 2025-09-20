@@ -1044,6 +1044,9 @@ class OpenFirebaseOrchestrator:
 
         # Store scan results for summary at end
         scan_summaries = []
+        
+        # Store authentication results before they get cleared by print_scan_details
+        all_auth_results = {}
 
         # Calculate how many scans are being performed for logic decisions
         scans_performed = sum(
@@ -1095,6 +1098,12 @@ class OpenFirebaseOrchestrator:
             )
 
             if scans_performed > 1:
+                # Collect authentication results BEFORE they get cleared by print_scan_details
+                for project_id, project_results in scanner.database_scanner.all_authenticated_results.items():
+                    if project_id not in all_auth_results:
+                        all_auth_results[project_id] = {}
+                    all_auth_results[project_id].update(project_results)
+                
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
                     db_scan_results, "DATABASES", package_project_ids
@@ -1142,11 +1151,16 @@ class OpenFirebaseOrchestrator:
             )
 
             if scans_performed > 1:
+                # Collect authentication results BEFORE they get cleared by print_scan_details
+                for project_id, project_results in scanner.storage_scanner.all_authenticated_results.items():
+                    if project_id not in all_auth_results:
+                        all_auth_results[project_id] = {}
+                    all_auth_results[project_id].update(project_results)
+                
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
                     storage_scan_results, "STORAGE", package_project_ids
                 )
-                # Note: authenticated results are cleared within print_scan_details after display
                 scan_summaries.append((storage_scan_results, "STORAGE"))
             else:
                 # Single scan: print everything immediately
@@ -1182,6 +1196,12 @@ class OpenFirebaseOrchestrator:
                     )
 
                     if scans_performed > 1:
+                        # Collect authentication results BEFORE they get cleared by print_scan_details
+                        for project_id, project_results in scanner.config_scanner.all_authenticated_results.items():
+                            if project_id not in all_auth_results:
+                                all_auth_results[project_id] = {}
+                            all_auth_results[project_id].update(project_results)
+                        
                         # Multiple scans: print details immediately, save summary for end
                         scanner.print_scan_details(
                             config_scan_results, "REMOTE CONFIG", package_project_ids
@@ -1242,6 +1262,12 @@ class OpenFirebaseOrchestrator:
                 )
 
                 if scans_performed > 1:
+                    # Collect authentication results BEFORE they get cleared by print_scan_details
+                    for project_id, project_results in scanner.config_scanner.all_authenticated_results.items():
+                        if project_id not in all_auth_results:
+                            all_auth_results[project_id] = {}
+                        all_auth_results[project_id].update(project_results)
+                    
                     # Multiple scans: print details immediately, save summary for end
                     scanner.print_scan_details(config_scan_results, "REMOTE CONFIG")
                     scan_summaries.append((config_scan_results, "REMOTE CONFIG"))
@@ -1291,6 +1317,12 @@ class OpenFirebaseOrchestrator:
             )
 
             if scans_performed > 1:
+                # Collect authentication results BEFORE they get cleared by print_scan_details
+                for project_id, project_results in scanner.firestore_scanner.all_authenticated_results.items():
+                    if project_id not in all_auth_results:
+                        all_auth_results[project_id] = {}
+                    all_auth_results[project_id].update(project_results)
+                
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
                     firestore_scan_results, "FIRESTORE", package_project_ids
@@ -1343,6 +1375,12 @@ class OpenFirebaseOrchestrator:
             )
 
             if scans_performed > 1:
+                # Collect authentication results BEFORE they get cleared by print_scan_details
+                for project_id, project_results in scanner.storage_scanner.all_authenticated_results.items():
+                    if project_id not in all_auth_results:
+                        all_auth_results[project_id] = {}
+                    all_auth_results[project_id].update(project_results)
+                
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
                     storage_write_results, "STORAGE WRITE", package_project_ids
@@ -1395,6 +1433,12 @@ class OpenFirebaseOrchestrator:
             )
 
             if scans_performed > 1:
+                # Collect authentication results BEFORE they get cleared by print_scan_details
+                for project_id, project_results in scanner.database_scanner.all_authenticated_results.items():
+                    if project_id not in all_auth_results:
+                        all_auth_results[project_id] = {}
+                    all_auth_results[project_id].update(project_results)
+                
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
                     rtdb_write_results, "REALTIME DATABASE WRITE", package_project_ids
@@ -1447,6 +1491,12 @@ class OpenFirebaseOrchestrator:
             )
 
             if scans_performed > 1:
+                # Collect authentication results BEFORE they get cleared by print_scan_details
+                for project_id, project_results in scanner.firestore_scanner.all_authenticated_results.items():
+                    if project_id not in all_auth_results:
+                        all_auth_results[project_id] = {}
+                    all_auth_results[project_id].update(project_results)
+                
                 # Multiple scans: print details immediately, save summary for end
                 scanner.print_scan_details(
                     firestore_write_results, "FIRESTORE WRITE", package_project_ids
@@ -1480,6 +1530,7 @@ class OpenFirebaseOrchestrator:
                     output_file=combined_output_file,
                     package_project_ids=package_project_ids,
                     print_warnings=print_warnings_immediately,
+                    all_auth_results=all_auth_results,
                 )
                 # For --read-all: defer this message, for others: print immediately
                 if not args.scan_all and not args.write_all:
@@ -1502,6 +1553,7 @@ class OpenFirebaseOrchestrator:
                     output_file=combined_output_file,
                     package_project_ids=None,
                     print_warnings=False,
+                    all_auth_results=all_auth_results,
                 )
 
                 # Add authentication summary to combined file if authentication was used

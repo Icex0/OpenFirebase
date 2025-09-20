@@ -262,6 +262,7 @@ class FirebaseScanner:
         output_file=None,
         package_project_ids=None,
         print_warnings=True,
+        all_auth_results=None,
     ):
         """Save combined scan results from multiple scanners."""
         return self.database_scanner.save_combined_scan_results(
@@ -275,6 +276,7 @@ class FirebaseScanner:
             output_file,
             package_project_ids,
             print_warnings,
+            all_auth_results,  # Pass collected authentication results from orchestrator
         )
 
     def get_read_auth_success_summary(self) -> Dict[str, Set[str]]:

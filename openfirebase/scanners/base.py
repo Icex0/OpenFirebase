@@ -1088,6 +1088,7 @@ class BaseScanner(ABC):
         section_title: str,
         resource_type: str = "database",
         project_to_packages: Dict[str, List[str]] = None,
+        all_auth_results: Dict[str, Dict[str, Dict[str, str]]] = None,
     ):
         """Write a section of scan results to a file.
 
@@ -1136,6 +1137,26 @@ class BaseScanner(ABC):
                     status, security, message, result, resource_type, colorize=False
                 )
                 f.write(f"{status_message}\n")
+                
+                # Check if there's an authentication retry result for this URL
+                if all_auth_results and project_id in all_auth_results:
+                    project_auth_results = all_auth_results[project_id]
+                    if url in project_auth_results:
+                        auth_result = project_auth_results[url]
+                        auth_status = auth_result.get("status", "unknown")
+                        auth_message = auth_result.get("message", "No message")
+                        
+                        f.write("\n[AUTH] Authentication retry result:\n\n")
+                        f.write(f"URL: {url} (authenticated)\n")
+                        f.write(f"Status: {auth_status}\n")
+                        f.write(f"Response: {auth_message}\n")
+                        
+                        # Show response content if available
+                        if auth_result.get("response_content"):
+                            f.write(f"Content: {auth_result['response_content']}\n")
+                        
+                        f.write("\n")
+                
                 f.write("\n")
 
             f.write("\n")
@@ -1589,6 +1610,7 @@ class BaseScanner(ABC):
         output_file=None,
         package_project_ids=None,
         print_warnings=True,
+        all_auth_results=None,
     ):
         """Save combined scan results from multiple scanners."""
         warning_messages = []
@@ -1633,6 +1655,7 @@ class BaseScanner(ABC):
                     "REALTIME DATABASE READ RESULTS",
                     "database",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # Storage results
@@ -1643,6 +1666,7 @@ class BaseScanner(ABC):
                     "STORAGE READ RESULTS",
                     "storage",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # Remote Config results
@@ -1653,6 +1677,7 @@ class BaseScanner(ABC):
                     "REMOTE CONFIG READ RESULTS",
                     "config",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # Firestore results
@@ -1663,6 +1688,7 @@ class BaseScanner(ABC):
                     "FIRESTORE READ RESULTS",
                     "firestore",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # Storage write results
@@ -1673,6 +1699,7 @@ class BaseScanner(ABC):
                     "FIREBASE STORAGE WRITE RESULTS",
                     "storage",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # RTDB write results
@@ -1683,6 +1710,7 @@ class BaseScanner(ABC):
                     "FIREBASE REALTIME DATABASE WRITE RESULTS",
                     "database",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # Firestore write results
@@ -1693,6 +1721,7 @@ class BaseScanner(ABC):
                     "FIRESTORE WRITE RESULTS",
                     "firestore",
                     project_to_packages,
+                    all_auth_results,
                 )
 
             # Individual summaries (matches console output format)
