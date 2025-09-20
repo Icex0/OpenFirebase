@@ -12,11 +12,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
+from .core.config import BLUE, GREEN, ORANGE, RED, RESET, VERSION, YELLOW
+
 
 def create_openfirebase_header():
     """Create a colorized ASCII art header for OpenFirebase with gradient colors."""
-    # Import colors and version from config
-    from .core.config import GREEN, ORANGE, RED, RESET, VERSION, YELLOW
 
     # ASCII art for "OpenFirebase" using slant font
     ascii_lines = [
@@ -78,7 +78,6 @@ _extraction_context = None
 def signal_handler(sig, _):
     """Handle SIGINT (Ctrl+C) gracefully."""
     global _shutdown_requested, _global_executor, _extraction_context
-    from .core.config import BLUE, RED, RESET
     _shutdown_requested = True
     print(f"\n{RED}[X]{RESET} Shutdown requested by user (Ctrl+C).")
     print(f"{BLUE}[INF]{RESET} Attempting graceful shutdown - will save extracted data...")
@@ -94,7 +93,6 @@ def signal_handler(sig, _):
 def force_shutdown():
     """Force immediate shutdown - used when graceful shutdown fails."""
     global _global_executor, _shutdown_requested
-    from .core.config import RED, RESET
     print(f"\n{RED}[X]{RESET} Force shutdown - terminating processes...")
 
     # Set shutdown flag to prevent new processes from starting
@@ -205,7 +203,6 @@ def load_wordlist(wordlist_path: str) -> Tuple[List[str], bool]:
         - success_flag: True if loaded successfully, False otherwise
 
     """
-    from .core.config import BLUE, RESET, YELLOW
 
     try:
         with open(wordlist_path, encoding="utf-8") as f:
@@ -328,8 +325,6 @@ def format_firebase_items_status(
         Formatted status message string with ANSI color codes
 
     """
-    # Import colors from config
-    from .core.config import GREEN, RED, RESET
 
     if not firebase_items:
         # Red color for no items found
@@ -611,6 +606,40 @@ def validate_project_ids(project_ids_input):
             print(f"Warning: Skipping invalid project ID: {pid}")
 
     return project_ids_set
+
+
+def get_apk_files(input_folder: Path) -> List[Path]:
+    """Get all APK files from the input folder.
+    
+    Args:
+        input_folder: Path to folder containing APK files
+        
+    Returns:
+        List of APK file paths sorted by size (smallest first)
+    """
+    
+    if not input_folder.exists():
+        raise FileNotFoundError(f"Folder not found: {input_folder}")
+
+    # Find all APK files
+    apk_files = list(input_folder.glob("*.apk"))
+
+    if not apk_files:
+        # Check if the user provided a single APK file instead of a directory
+        if (
+            input_folder.is_file()
+            and input_folder.suffix.lower() == ".apk"
+        ):
+            print(f"{RED}[ERROR]{RESET} '{input_folder}' is a single APK file.")
+            print(f"{RED}[ERROR]{RESET} Use -f/--file for single APK files, or -d/--apk-dir for directories containing APK files.")
+        else:
+            print(f"{RED}[ERROR]{RESET} No APK files found in {input_folder}")
+        return []
+
+    # Sort files by size (smallest first, largest last)
+    apk_files.sort(key=lambda x: x.stat().st_size)
+
+    return apk_files
 
 
 def cleanup_executor():

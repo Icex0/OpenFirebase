@@ -1053,26 +1053,25 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase realtime databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            if is_apk_mode:
-                db_output_file = create_output_path(
+            # Unified output file logic for both APK and Project ID modes
+            db_output_file = (
+                create_output_path(
                     args.output_dir, "read_output_rtdb.txt", self.run_timestamp
                 )
+                if scans_performed > 1
+                else create_output_path(
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
+                )
+            )
+            # Always create open-only files for both single and multiple scans
+            
+            create_open_only = True
+            
+            if is_apk_mode:
                 db_scan_results = scanner.scan_databases(
                     project_ids, package_project_ids, db_output_file
                 )
             else:
-                db_output_file = (
-                    create_output_path(
-                        args.output_dir, "read_output_rtdb.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
                 db_scan_results = scanner.scan_databases(
                     project_ids,
                     output_file=db_output_file,
@@ -1101,26 +1100,25 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase storage buckets{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            if is_apk_mode:
-                storage_output_file = create_output_path(
+            # Unified output file logic for both APK and Project ID modes
+            storage_output_file = (
+                create_output_path(
                     args.output_dir, "read_output_storage.txt", self.run_timestamp
                 )
+                if scans_performed > 1
+                else create_output_path(
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
+                )
+            )
+            # Always create open-only files for both single and multiple scans
+            
+            create_open_only = True
+            
+            if is_apk_mode:
                 storage_scan_results = scanner.scan_storage_buckets(
                     project_ids, package_project_ids, storage_output_file
                 )
             else:
-                storage_output_file = (
-                    create_output_path(
-                        args.output_dir, "read_output_storage.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
                 storage_scan_results = scanner.scan_storage_buckets(
                     project_ids,
                     output_file=storage_output_file,
@@ -1154,8 +1152,15 @@ class OpenFirebaseOrchestrator:
             if is_apk_mode:
                 config_data = extract_config_data(results)
                 if config_data:
-                    config_output_file = create_output_path(
-                        args.output_dir, "read_output_config.txt", self.run_timestamp
+                    # Unified output file logic for both APK and Project ID modes
+                    config_output_file = (
+                        create_output_path(
+                            args.output_dir, "read_output_config.txt", self.run_timestamp
+                        )
+                        if scans_performed > 1
+                        else create_output_path(
+                            args.output_dir, "full_scan_output.txt", self.run_timestamp
+                        )
                     )
                     config_scan_results = scanner.scan_config(
                         config_data, package_project_ids, config_output_file
@@ -1181,8 +1186,15 @@ class OpenFirebaseOrchestrator:
                     )
             else:
                 # Project ID mode - config scanning requires manual credentials
-                config_output_file = create_output_path(
-                    args.output_dir, "read_output_config.txt", self.run_timestamp
+                # Unified output file logic for both APK and Project ID modes
+                config_output_file = (
+                    create_output_path(
+                        args.output_dir, "read_output_config.txt", self.run_timestamp
+                    )
+                    if scans_performed > 1
+                    else create_output_path(
+                        args.output_dir, "full_scan_output.txt", self.run_timestamp
+                    )
                 )
                 # Build config_data dictionary for project ID mode
                 config_data = {}
@@ -1215,13 +1227,21 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firestore databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            if is_apk_mode:
-                firestore_output_file = create_output_path(
+            # Unified output file logic for both APK and Project ID modes
+            firestore_output_file = (
+                create_output_path(
                     args.output_dir, "read_output_firestore.txt", self.run_timestamp
                 )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
+                if scans_performed > 1
+                else create_output_path(
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
+                )
+            )
+            # Always create open-only files for both single and multiple scans
+            
+            create_open_only = True
+            
+            if is_apk_mode:
                 firestore_scan_results = scanner.scan_firestore(
                     project_ids,
                     collections_per_package,
@@ -1231,18 +1251,6 @@ class OpenFirebaseOrchestrator:
                     custom_collections,
                 )
             else:
-                firestore_output_file = (
-                    create_output_path(
-                        args.output_dir, "read_output_firestore.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
                 firestore_scan_results = scanner.scan_firestore(
                     project_ids,
                     output_file=firestore_output_file,
@@ -1272,13 +1280,21 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firebase storage buckets{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            if is_apk_mode:
-                storage_write_output_file = create_output_path(
+            # Unified output file logic for both APK and Project ID modes
+            storage_write_output_file = (
+                create_output_path(
                     args.output_dir, "write_output_storage.txt", self.run_timestamp
                 )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
+                if scans_performed > 1
+                else create_output_path(
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
+                )
+            )
+            # Always create open-only files for both single and multiple scans
+            
+            create_open_only = True
+            
+            if is_apk_mode:
                 storage_write_results = scanner.write_to_storage_buckets(
                     project_ids,
                     args.write_storage_file,
@@ -1287,18 +1303,6 @@ class OpenFirebaseOrchestrator:
                     create_open_only,
                 )
             else:
-                storage_write_output_file = (
-                    create_output_path(
-                        args.output_dir, "write_output_storage.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
                 storage_write_results = scanner.write_to_storage_buckets(
                     project_ids,
                     args.write_storage_file,
@@ -1328,13 +1332,21 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firebase Realtime Database{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            if is_apk_mode:
-                rtdb_write_output_file = create_output_path(
+            # Unified output file logic for both APK and Project ID modes
+            rtdb_write_output_file = (
+                create_output_path(
                     args.output_dir, "write_output_rtdb.txt", self.run_timestamp
                 )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
+                if scans_performed > 1
+                else create_output_path(
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
+                )
+            )
+            # Always create open-only files for both single and multiple scans
+            
+            create_open_only = True
+            
+            if is_apk_mode:
                 rtdb_write_results = scanner.write_to_databases(
                     project_ids,
                     args.write_rtdb_file,
@@ -1343,18 +1355,6 @@ class OpenFirebaseOrchestrator:
                     create_open_only,
                 )
             else:
-                rtdb_write_output_file = (
-                    create_output_path(
-                        args.output_dir, "write_output_rtdb.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
                 rtdb_write_results = scanner.write_to_databases(
                     project_ids,
                     args.write_rtdb_file,
@@ -1384,13 +1384,21 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firestore databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            if is_apk_mode:
-                firestore_write_output_file = create_output_path(
+            # Unified output file logic for both APK and Project ID modes
+            firestore_write_output_file = (
+                create_output_path(
                     args.output_dir, "write_output_firestore.txt", self.run_timestamp
                 )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
+                if scans_performed > 1
+                else create_output_path(
+                    args.output_dir, "full_scan_output.txt", self.run_timestamp
+                )
+            )
+            # Always create open-only files for both single and multiple scans
+            
+            create_open_only = True
+            
+            if is_apk_mode:
                 firestore_write_results = scanner.write_to_firestore_databases(
                     project_ids,
                     args.write_firestore_value,
@@ -1399,18 +1407,6 @@ class OpenFirebaseOrchestrator:
                     create_open_only,
                 )
             else:
-                firestore_write_output_file = (
-                    create_output_path(
-                        args.output_dir, "write_output_firestore.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Don't create open-only files for individual scans if doing combined scan
-                # Exception: Always create open-only files when authentication is enabled
-                create_open_only = not (scans_performed > 1) or (firebase_auth and getattr(args, "check_with_auth", False))
                 firestore_write_results = scanner.write_to_firestore_databases(
                     project_ids,
                     args.write_firestore_value,

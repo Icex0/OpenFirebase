@@ -180,30 +180,8 @@ class FirebaseExtractor:
 
     def get_apk_files(self) -> List[Path]:
         """Get all APK files from the input folder."""
-        if not self.input_folder.exists():
-            raise FileNotFoundError(f"Folder not found: {self.input_folder}")
-
-        # Find all APK files
-        apk_files = list(self.input_folder.glob("*.apk"))
-
-        if not apk_files:
-            # Check if the user provided a single APK file instead of a directory
-            if (
-                self.input_folder.is_file()
-                and self.input_folder.suffix.lower() == ".apk"
-            ):
-                print(f"Error: '{self.input_folder}' is a single APK file.")
-                print(
-                    "Use -f/--file for single APK files, or -d/--apk-dir for directories containing APK files."
-                )
-            else:
-                print(f"No APK files found in {self.input_folder}")
-            return []
-
-        # Sort files by size (smallest first, largest last)
-        apk_files.sort(key=lambda x: x.stat().st_size)
-
-        return apk_files
+        from ..utils import get_apk_files
+        return get_apk_files(self.input_folder)
 
     def process_apk(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Process a single APK file and return Firebase items."""
