@@ -1713,7 +1713,7 @@ class BaseScanner(ABC):
                 }
                 
                 display_name = type_mapping.get(scan_type, scan_type)
-                f.write(f"\n" + "=" * 80 + "\n")
+                f.write("\n" + "=" * 80 + "\n")
                 f.write(f"[UNAUTH] SCAN SUMMARY {display_name}\n")
                 f.write("=" * 80 + "\n")
                 

@@ -419,7 +419,7 @@ class ConfigScanner(BaseScanner):
                 f.write(f"\nWARNING: {counts['public_count']} public {resource_word} found!\n")
                 f.write(f"These {resource_word} are accessible without authentication.\n")
                 f.write("It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:\n")
-                f.write(f"trufflehog filesystem remote_config_results\n")
-                f.write(f"gitleaks dir remote_config_results -v\n")
+                f.write("trufflehog filesystem remote_config_results\n")
+                f.write("gitleaks dir remote_config_results -v\n")
 
 

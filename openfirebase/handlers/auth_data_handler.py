@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ..core.config import BLUE, GREEN, ORANGE, RESET, YELLOW
+from ..core.config import BLUE, GREEN, RESET, YELLOW
 
 
 class AuthDataHandler:

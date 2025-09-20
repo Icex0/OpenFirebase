@@ -972,8 +972,20 @@ class OpenFirebaseOrchestrator:
             collections_per_package: Extracted collections (APK mode only)
 
         """
-        # Check if manual credentials are provided
+        # Check if manual credentials are provided (either via command line or resume-auth-file)
         has_manual_credentials = bool(args.app_id and args.api_key)
+        
+        # Also check if we're in --resume-auth-file mode with saved credentials
+        if not has_manual_credentials and getattr(args, "resume_auth_file", None):
+            # In resume-auth-file mode, check if any of the saved auth data has API keys and app IDs
+            from ..handlers.auth_data_handler import AuthDataHandler
+            auth_data = AuthDataHandler.load_auth_data(args.resume_auth_file)
+            if auth_data:
+                # Check if any project has both api_key and app_id (required for remote config)
+                for project_data in auth_data.values():
+                    if project_data.get("api_key") and project_data.get("app_id"):
+                        has_manual_credentials = True
+                        break
 
         # Check for write options
         write_firestore = getattr(args, "write_firestore", False) or getattr(args, "write_all", False)
@@ -1198,13 +1210,29 @@ class OpenFirebaseOrchestrator:
                 )
                 # Build config_data dictionary for project ID mode
                 config_data = {}
-                for project_id in project_ids:
-                    config_data[project_id] = {
-                        "api_key": args.api_key,
-                        "app_id": args.app_id,
-                        "cert_sha1": args.cert_sha1,
-                        "package_name": args.package_name
-                    }
+                
+                # If we're in --resume-auth-file mode, use saved auth data
+                if getattr(args, "resume_auth_file", None):
+                    from ..handlers.auth_data_handler import AuthDataHandler
+                    auth_data = AuthDataHandler.load_auth_data(args.resume_auth_file)
+                    if auth_data:
+                        for project_id in project_ids:
+                            project_auth_data = auth_data.get(project_id, {})
+                            config_data[project_id] = {
+                                "api_key": project_auth_data.get("api_key"),
+                                "app_id": project_auth_data.get("app_id"),
+                                "cert_sha1": project_auth_data.get("cert_sha1"),
+                                "package_name": project_auth_data.get("package_name")
+                            }
+                else:
+                    # Use manual command line credentials
+                    for project_id in project_ids:
+                        config_data[project_id] = {
+                            "api_key": args.api_key,
+                            "app_id": args.app_id,
+                            "cert_sha1": args.cert_sha1,
+                            "package_name": args.package_name
+                        }
 
                 config_scan_results = scanner.scan_config(
                     config_data, package_project_ids=None, output_file=config_output_file
@@ -1573,7 +1601,7 @@ class OpenFirebaseOrchestrator:
             write_firestore_collection_count = 0
 
             # Process read access
-            for service_type, urls in read_auth_success_summary.items():
+            for _, urls in read_auth_success_summary.items():
                 if urls:
                     for url in urls:
                         project_match = extract_project_id_from_url(url)
@@ -1581,7 +1609,7 @@ class OpenFirebaseOrchestrator:
                             if "firestore.googleapis.com" in url:
                                 read_projects_with_firestore.add(project_match)
                                 # Count collections that actually have data
-                                for proj_id, proj_results in authenticated_results.items():
+                                for _, proj_results in authenticated_results.items():
                                     if url in proj_results and proj_results[url].get("has_data", True):
                                         read_firestore_collection_count += 1
                                         break
@@ -1591,7 +1619,7 @@ class OpenFirebaseOrchestrator:
                                 read_projects_with_storage.add(project_match)
 
             # Process write access
-            for service_type, urls in write_auth_success_summary.items():
+            for _, urls in write_auth_success_summary.items():
                 if urls:
                     for url in urls:
                         project_match = extract_project_id_from_url(url)
@@ -1599,7 +1627,7 @@ class OpenFirebaseOrchestrator:
                             if "firestore.googleapis.com" in url:
                                 write_projects_with_firestore.add(project_match)
                                 # Count collections that actually have data
-                                for proj_id, proj_results in authenticated_results.items():
+                                for _, proj_results in authenticated_results.items():
                                     if url in proj_results and proj_results[url].get("has_data", True):
                                         write_firestore_collection_count += 1
                                         break

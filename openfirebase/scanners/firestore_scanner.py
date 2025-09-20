@@ -59,7 +59,7 @@ class FirestoreScanner(BaseScanner):
 
         # Show response content if available
         if "response_content" in result:
-            print(f"Content: {result['response_content']}\n")  # Add newline after content for better readability
+            print(f"Content: {result['response_content']}\n")  
 
         # Add status-specific messages
         status_message = self._get_status_message(
