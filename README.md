@@ -36,6 +36,8 @@ Java is required for JADX decompilation (default mode) and apksigner.
 ```bash
 # Using Homebrew (recommended)
 brew install openjdk
+echo 'export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 #### Linux (Ubuntu/Debian)
