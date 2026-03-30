@@ -288,13 +288,13 @@ openfirebase -d path/to/apks -F
 #### Full unauthenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access
-openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlists/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
 ```
 
 #### Full authenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access with authentication
-openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlists/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
 ```
 
 #### Resume from extraction only results and perform all read scans
