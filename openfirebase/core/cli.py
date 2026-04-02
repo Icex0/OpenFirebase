@@ -305,6 +305,50 @@ def validate_write_options(
             )
 
 
+def validate_service_account_options(
+    service_account: Optional[str],
+    private_key: Optional[str]
+) -> Optional[str]:
+    """Validate service account authentication options.
+
+    Returns:
+        The private key content if valid, None otherwise.
+
+    """
+    if service_account and not private_key:
+        raise typer.BadParameter(
+            "--service-account requires --private-key to be specified"
+        )
+    if private_key and not service_account:
+        raise typer.BadParameter(
+            "--private-key requires --service-account to be specified"
+        )
+
+    if private_key:
+        key_path = Path(private_key)
+        if key_path.exists() and key_path.is_file():
+            # Read key from file
+            try:
+                private_key_content = key_path.read_text(encoding="utf-8")
+            except Exception as e:
+                raise typer.BadParameter(f"Could not read private key file: {e}")
+        else:
+            # Treat as inline key string
+            private_key_content = private_key
+
+        # Convert literal \n sequences to actual newlines (common in JSON exports)
+        if "\\n" in private_key_content:
+            private_key_content = private_key_content.replace("\\n", "\n")
+
+        if "-----BEGIN" not in private_key_content:
+            raise typer.BadParameter(
+                "Private key must be a PEM-encoded key (should contain -----BEGIN PRIVATE KEY----- or -----BEGIN RSA PRIVATE KEY-----)"
+            )
+        return private_key_content
+
+    return None
+
+
 def validate_resume_fast_extract(resume: Optional[Path], fast_extract: bool) -> None:
     """Validate resume and fast extract compatibility."""
     if resume and fast_extract:
@@ -586,6 +630,20 @@ def main(
         "--resume-auth-file",
         help="Path to auth_data.json file or results directory containing saved authentication data for direct authentication (skips trial-and-error auth process)",
         rich_help_panel="Authentication"
+    ),
+
+    # Service Account Authentication
+    service_account: Optional[str] = Option(
+        None,
+        "--service-account",
+        help="Service account email (client_email) for admin-level authentication via Google OAuth2 JWT flow (bypasses security rules)",
+        rich_help_panel="Service Account Authentication"
+    ),
+    private_key: Optional[str] = Option(
+        None,
+        "--private-key",
+        help="Path to PEM private key file for service account authentication (required with --service-account)",
+        rich_help_panel="Service Account Authentication"
     )
 ):
     """Extract Firebase items from APK files and scan for unauthorized access.
@@ -607,6 +665,7 @@ def main(
     validate_write_options(write_storage, write_storage_file, write_firestore, write_firestore_value, write_rtdb, write_rtdb_file, write_all)
     validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key)
     validate_remote_config_options(read_config, read_all, project_id, project_id_file, api_key, app_id, cert_sha1, package_name)
+    private_key_content = validate_service_account_options(service_account, private_key)
 
     # Handle resume file validation
     resume_file = None
@@ -655,6 +714,8 @@ def main(
     args.resume_auth_file = str(validated_resume_auth_file) if validated_resume_auth_file else None
     args.exclude_project_id = exclude_project_id
     args.timeout = timeout
+    args.service_account = service_account
+    args.private_key_content = private_key_content
 
     # Import here to avoid circular imports
     from ..core.orchestrator import OpenFirebaseOrchestrator

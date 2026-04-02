@@ -4,7 +4,7 @@ Centralized configuration for all constants and settings.
 """
 
 # Version information
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # ANSI color codes - Using 256-color mode for consistency across terminals
 GREEN = "\033[38;5;46m"  # Bright green for success
@@ -33,7 +33,7 @@ STATUS_LOCKED = "423"
 STATUS_TOO_MANY_REQUESTS = "429"
 
 # JADX Configuration
-JADX_VERSION = "1.5.2"
+JADX_VERSION = "1.5.2" # 1.5.5 is much slower
 JADX_DOWNLOAD_URL = f"https://github.com/skylot/jadx/releases/download/v{JADX_VERSION}/jadx-{JADX_VERSION}.zip"
 
 # Android Build Tools Configuration

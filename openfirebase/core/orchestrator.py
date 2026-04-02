@@ -372,12 +372,16 @@ class OpenFirebaseOrchestrator:
             f"{BLUE}[INF]{RESET} Scanning {len(project_ids_set)} project ID(s): {', '.join(sorted(project_ids_set))}"
         )
 
-        # Initialize Firebase authentication if requested
+        # Initialize Firebase authentication if requested or SA credentials provided
         firebase_auth = None
-        if getattr(args, "check_with_auth", False):
+        has_sa = self._has_service_account_auth(args)
+        if getattr(args, "check_with_auth", False) or has_sa:
             from ..core.auth import FirebaseAuth
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
-            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
+            if getattr(args, "check_with_auth", False):
+                print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
+            if has_sa:
+                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - will use admin-level access (bypasses security rules)")
 
 
         # Initialize scanner and perform scanning
@@ -451,12 +455,16 @@ class OpenFirebaseOrchestrator:
             + ("..." if len(project_ids_set) > 5 else "")
         )
 
-        # Initialize Firebase authentication if requested
+        # Initialize Firebase authentication if requested or SA credentials provided
         firebase_auth = None
-        if getattr(args, "check_with_auth", False):
+        has_sa = self._has_service_account_auth(args)
+        if getattr(args, "check_with_auth", False) or has_sa:
             from ..core.auth import FirebaseAuth
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
-            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
+            if getattr(args, "check_with_auth", False):
+                print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
+            if has_sa:
+                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - will use admin-level access (bypasses security rules)")
 
 
         # Initialize scanner
@@ -556,7 +564,7 @@ class OpenFirebaseOrchestrator:
             f"{BLUE}[INF]{RESET} Using fast extraction for {apk_path.name} - source code analysis disabled!"
         )
         print(
-            f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected!"
+            f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections and hardcoded service account credentials will not be detected! (accidentally included service account JSON files in assets/raw will still be found)"
         )
 
         # Show simple progress for fast extraction
@@ -585,12 +593,13 @@ class OpenFirebaseOrchestrator:
 
     def _process_single_file_jadx(self, apk_path, timestamped_output, file_handler, args):
         """Process single file with JADX extraction."""
-        print(
-            f"{BLUE}[INF]{RESET} Processing single APK file with JADX decompilation: {apk_path.name}"
-        )
         try:
             timeout_seconds = self._get_timeout_seconds(args)
             jadx_extractor = JADXExtractor(apk_path.parent, processing_mode="single", timeout_seconds=timeout_seconds)
+            jadx_ver = f" v{jadx_extractor.jadx_version}" if jadx_extractor.jadx_version else ""
+            print(
+                f"{BLUE}[INF]{RESET} Processing single APK file with JADX{jadx_ver} decompilation: {apk_path.name}"
+            )
             firebase_items = jadx_extractor.process_file_with_progress(apk_path)
 
             # Extract real package name
@@ -623,7 +632,7 @@ class OpenFirebaseOrchestrator:
                 f"{BLUE}[INF]{RESET} Using fast extraction for APK processing - source code analysis disabled"
             )
             print(
-                f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected"
+                f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections and hardcoded service account credentials will not be detected (bundled JSON service account files in assets/raw will still be found)"
             )
         else:
             timeout_seconds = self._get_timeout_seconds(args)
@@ -895,6 +904,97 @@ class OpenFirebaseOrchestrator:
 
         return 0
 
+    def _has_service_account_auth(self, args, results=None):
+        """Check if service account authentication is available.
+
+        Either from CLI flags (--service-account + --private-key) or
+        extracted from APK results (Service_Account_Email + Service_Account_Private_Key).
+
+        """
+        # CLI flags
+        if getattr(args, "service_account", None) and getattr(args, "private_key_content", None):
+            return True
+
+        # Extracted from APK
+        if results:
+            for package_name, links in results.items():
+                sa_email = None
+                sa_key = None
+                for link_type, link_value in links:
+                    if link_type == "Service_Account_Email":
+                        sa_email = link_value
+                    elif link_type == "Service_Account_Private_Key":
+                        sa_key = link_value
+                if sa_email and sa_key:
+                    return True
+
+        return False
+
+    def _setup_service_account_auth(self, firebase_auth, args, project_ids, results=None):
+        """Set up service account authentication tokens.
+
+        Handles both CLI-provided and APK-extracted service account credentials.
+
+        """
+        sa_count = 0
+
+        # 1. CLI-provided service account
+        if getattr(args, "service_account", None) and getattr(args, "private_key_content", None):
+            for project_id in sorted(project_ids):
+                token = firebase_auth.authenticate_with_service_account(
+                    project_id,
+                    args.service_account,
+                    args.private_key_content,
+                )
+                if token:
+                    sa_count += 1
+                    break  # One SA token works for all projects under the same GCP project
+            # If authenticated successfully, apply the token to all project IDs
+            if sa_count > 0:
+                # The first successful project_id has the token; copy to others
+                for pid in project_ids:
+                    if not firebase_auth.has_sa_token(pid):
+                        firebase_auth.authenticate_with_service_account(
+                            pid,
+                            args.service_account,
+                            args.private_key_content,
+                        )
+
+        # 2. APK-extracted service accounts
+        if results:
+            for package_name, links in results.items():
+                # Collect all SA credentials, paired by order of appearance
+                sa_credentials = []
+                current_email = None
+                current_key = None
+                current_project_id = None
+                for link_type, link_value in links:
+                    if link_type == "Service_Account_Email":
+                        # If we have a pending pair, save it before starting a new one
+                        if current_email and current_key:
+                            sa_credentials.append((current_email, current_key, current_project_id))
+                        current_email = link_value
+                        current_key = None
+                        current_project_id = None
+                    elif link_type == "Service_Account_Private_Key":
+                        current_key = link_value
+                    elif link_type == "Service_Account_Project_ID":
+                        current_project_id = link_value
+                # Don't forget the last pair
+                if current_email and current_key:
+                    sa_credentials.append((current_email, current_key, current_project_id))
+
+                for sa_email, sa_key, sa_project_id in sa_credentials:
+                    target_ids = [sa_project_id] if sa_project_id and sa_project_id in project_ids else list(project_ids)
+                    for pid in target_ids:
+                        if not firebase_auth.has_sa_token(pid):
+                            token = firebase_auth.authenticate_with_service_account(pid, sa_email, sa_key)
+                            if token:
+                                sa_count += 1
+
+        if sa_count > 0:
+            print(f"{GREEN}[SA-AUTH]{RESET} Service account authentication set up for {sa_count} project(s)")
+
     def _perform_scanning(
         self,
         args,
@@ -908,12 +1008,19 @@ class OpenFirebaseOrchestrator:
             f"\n{BLUE}[INF]{RESET} Starting Firebase security scanning on {len(all_project_ids)} project ID(s)..."
         )
 
-        # Initialize Firebase authentication if requested
+        # Determine if we need authentication (either regular auth or service account)
+        has_sa_auth = self._has_service_account_auth(args, results)
+        needs_auth = getattr(args, "check_with_auth", False) or has_sa_auth
+
+        # Initialize Firebase authentication if needed
         firebase_auth = None
-        if getattr(args, "check_with_auth", False):
+        if needs_auth:
             from ..core.auth import FirebaseAuth
             firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
-            print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
+            if getattr(args, "check_with_auth", False):
+                print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
+            if has_sa_auth:
+                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - will use admin-level access (bypasses security rules)")
 
         # Initialize scanner
         scanner = FirebaseScanner(
@@ -1061,6 +1168,10 @@ class OpenFirebaseOrchestrator:
         # Setup Firebase authentication tokens if requested
         if firebase_auth and getattr(args, "check_with_auth", False):
             self._setup_firebase_auth_tokens(firebase_auth, project_ids, results, args)
+
+        # Setup service account authentication if available
+        if firebase_auth and self._has_service_account_auth(args, results):
+            self._setup_service_account_auth(firebase_auth, args, project_ids, results)
 
         # Scan databases
         if scan_rtdb:

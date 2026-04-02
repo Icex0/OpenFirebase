@@ -5,6 +5,7 @@ decompiling APK files using JADX and searching for Firebase patterns.
 """
 
 import io
+import json
 import os
 import re
 import shutil
@@ -14,7 +15,7 @@ import threading
 import time
 from contextlib import closing
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.request import urlopen
 from zipfile import ZipFile
 
@@ -58,6 +59,7 @@ class JADXExtractor:
         self.main_dir = os.path.dirname(os.path.realpath(__file__))
         self.processing_mode = processing_mode  # "single" or "directory"
         self.timeout_seconds = timeout_seconds if timeout_seconds is not None else DEFAULT_TIMEOUT_SECONDS
+        self.jadx_version = None
 
         # Determine JADX path (system or local)
         self.jadx_path = self._get_jadx_path()
@@ -90,7 +92,10 @@ class JADXExtractor:
                 text=True,
                 timeout=10,
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                self.jadx_version = result.stdout.strip() or result.stderr.strip()
+                return True
+            return False
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
@@ -168,7 +173,7 @@ class JADXExtractor:
                 self.jadx_path = self._get_jadx_path()
                 return self._check_jadx_availability()
             return False
-        print("⛔ JADX installation skipped. JADX decompilation will not be available.")
+        print("JADX installation skipped. JADX decompilation will not be available.")
         return False
 
 
@@ -241,8 +246,9 @@ class JADXExtractor:
             print(f"  {RED}[X]{RESET} JADX not available for decompiling {apk_path.name}")
             return False, False
 
-        # JADX command: jadx apk_path -d output_dir
-        cmd = [self.jadx_path, str(apk_path), "-d", str(output_dir)]
+        # JADX command: jadx apk_path -d output_dir -m simple
+        # Using 'simple' mode: faster decompilation, sufficient for string/pattern matching
+        cmd = [self.jadx_path, str(apk_path), "-d", str(output_dir), "-m", "simple"]
 
         # Start the process
         try:
@@ -291,7 +297,7 @@ class JADXExtractor:
             from ..extractors.extractor import FirebaseExtractor
 
             print(f"{BLUE}[INF]{RESET} Using fast extraction fallback for {apk_path.name}")
-            print(f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections will not be detected!")
+            print(f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections and hardcoded service account credentials will not be detected! (accidentally included service account JSON files in assets/raw will still be found)")
 
             # Create fast extractor and process the APK
             fast_extractor = FirebaseExtractor(apk_path.parent)
@@ -459,6 +465,126 @@ class JADXExtractor:
 
         return firebase_items
 
+    def _extract_service_accounts_from_decompiled(
+        self, decompiled_dir: Path
+    ) -> List[Dict[str, str]]:
+        """Search decompiled code for Firebase service account credentials.
+
+        Looks for:
+        - JSON files containing "type": "service_account"
+        - Hardcoded private keys (-----BEGIN PRIVATE KEY-----) in Java source
+        - Service account filenames (e.g. *-firebase-adminsdk-*.json)
+
+        Returns:
+            List of dicts with keys: client_email, private_key, project_id
+
+        """
+        service_accounts = []
+        seen_emails = set()
+
+        # 1. Search JSON files for complete service account objects
+        for json_file in decompiled_dir.rglob("*.json"):
+            if is_shutdown_requested():
+                break
+            try:
+                with open(json_file, encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                sa = self._parse_service_account_json(content)
+                if sa and sa["client_email"] not in seen_emails:
+                    seen_emails.add(sa["client_email"])
+                    service_accounts.append(sa)
+            except Exception:
+                pass
+
+        # 2. Search Java/Kotlin source for hardcoded private keys + client_email
+        for source_file in list(decompiled_dir.rglob("*.java")) + list(decompiled_dir.rglob("*.kt")):
+            if is_shutdown_requested():
+                break
+            try:
+                with open(source_file, encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                sa = self._extract_service_account_from_source(content)
+                if sa and sa["client_email"] not in seen_emails:
+                    seen_emails.add(sa["client_email"])
+                    service_accounts.append(sa)
+            except Exception:
+                pass
+
+        return service_accounts
+
+    @staticmethod
+    def _parse_service_account_json(content: str) -> Optional[Dict[str, str]]:
+        """Try to parse a service account JSON from file content.
+
+        Returns dict with client_email, private_key, project_id if valid, else None.
+
+        """
+        try:
+            data = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        if data.get("type") != "service_account":
+            return None
+
+        client_email = data.get("client_email", "")
+        private_key = data.get("private_key", "")
+        project_id = data.get("project_id", "")
+
+        if client_email and private_key and "-----BEGIN" in private_key:
+            return {
+                "client_email": client_email,
+                "private_key": private_key,
+                "project_id": project_id,
+            }
+        return None
+
+    @staticmethod
+    def _extract_service_account_from_source(content: str) -> Optional[Dict[str, str]]:
+        """Extract service account credentials from hardcoded strings in source code.
+
+        Looks for private key PEM blocks and nearby client_email patterns.
+
+        """
+        # Look for private key PEM block
+        pk_match = re.search(
+            r'-----BEGIN (?:RSA )?PRIVATE KEY-----[A-Za-z0-9+/=\s\\n]+-----END (?:RSA )?PRIVATE KEY-----',
+            content,
+        )
+        if not pk_match:
+            return None
+
+        private_key_raw = pk_match.group(0)
+        # Unescape Java string literal newlines
+        private_key = private_key_raw.replace("\\n", "\n")
+
+        # Look for client_email pattern (all GCP/Firebase service account types)
+        # Matches: @*.iam.gserviceaccount.com, @appspot.gserviceaccount.com,
+        #          @system.gserviceaccount.com, and any other @*.gserviceaccount.com
+        email_match = re.search(
+            r'["\']([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.gserviceaccount\.com)["\']',
+            content,
+        )
+        client_email = email_match.group(1) if email_match else ""
+
+        # Look for project_id
+        project_match = re.search(
+            r'["\']project_id["\']\s*[:=]\s*["\']([^"\']+)["\']',
+            content,
+        )
+        project_id = project_match.group(1) if project_match else ""
+
+        if client_email or private_key:
+            return {
+                "client_email": client_email,
+                "private_key": private_key,
+                "project_id": project_id,
+            }
+        return None
+
     def extract_from_apk(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Extract Firebase items from a single APK file using JADX decompilation."""
         if not self.jadx_available:
@@ -478,6 +604,13 @@ class JADXExtractor:
             if success:
                 # Search for Firebase patterns in decompiled code
                 firebase_items = self._extract_from_decompiled_code(temp_path)
+                # Search for service account credentials
+                service_accounts = self._extract_service_accounts_from_decompiled(temp_path)
+                for sa in service_accounts:
+                    firebase_items.append(("Service_Account_Email", sa["client_email"]))
+                    firebase_items.append(("Service_Account_Private_Key", sa["private_key"]))
+                    if sa["project_id"]:
+                        firebase_items.append(("Service_Account_Project_ID", sa["project_id"]))
             elif timeout_occurred:
                 # Fallback to fast extraction when JADX times out
                 firebase_items = self._fallback_to_fast_extraction(apk_path)
@@ -527,6 +660,13 @@ class JADXExtractor:
                 firebase_items = self._extract_from_decompiled_code_with_progress(
                     temp_path
                 )
+                # Search for service account credentials
+                service_accounts = self._extract_service_accounts_from_decompiled(temp_path)
+                for sa in service_accounts:
+                    firebase_items.append(("Service_Account_Email", sa["client_email"]))
+                    firebase_items.append(("Service_Account_Private_Key", sa["private_key"]))
+                    if sa["project_id"]:
+                        firebase_items.append(("Service_Account_Project_ID", sa["project_id"]))
             elif timeout_occurred:
                 # Fallback to fast extraction when JADX times out
                 firebase_items = self._fallback_to_fast_extraction(apk_path)

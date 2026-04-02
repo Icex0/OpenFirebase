@@ -60,6 +60,10 @@ class ResultsParser:
                 if line.startswith("- ") and current_package and current_header:
                     value = line[2:]  # Remove "- " prefix
 
+                    # Unescape literal \n sequences back to newlines (e.g. PEM private keys)
+                    if "\\n" in value and current_header == "Service_Account_Private_Key":
+                        value = value.replace("\\n", "\n")
+
                     # Clean up the header by removing source labels like "(JADX)" or "(Fast)"
                     clean_header = self._clean_header(current_header)
 

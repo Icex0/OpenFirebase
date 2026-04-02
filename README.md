@@ -13,7 +13,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)](https://www.python.org)
 [![GitHub issues](https://img.shields.io/github/issues/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/issues)
 
-Automated Firebase security scanner that extracts Firebase configurations from APK files and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config), including support for all known service URL formats.
+Automated Firebase security scanner that extracts Firebase configurations from APK files and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
 
 Supports multiple inputs including APK extraction via JADX decompilation, fast extract, single or multiple project IDs.
 
@@ -188,6 +188,32 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 </details>
 
 <details>
+<summary><strong>Service Account Authentication</strong></summary>
+
+OpenFirebase detects Firebase service account credentials (`client_email` + `private_key`) accidentally embedded in APK files. Service accounts with admin-level roles (e.g. `firebase-adminsdk`) bypass all Firebase security rules, granting unrestricted access.
+
+#### Detection
+- **JADX decompilation**: Parses JSON files containing `"type": "service_account"` with `client_email` and `private_key` fields. Also scans Java/Kotlin source for hardcoded PEM private keys and `@*.gserviceaccount.com` emails
+- **Fast extraction**: Reads `assets/`, `res/raw/`, and root-level JSON files directly from the APK for service account JSON files
+
+#### Authentication Flow
+When credentials are found (or manually provided via `--service-account` and `--private-key`), OpenFirebase authenticates using the Google OAuth2 service-to-service JWT flow:
+1. Signs a JWT with the service account's RSA private key
+2. Exchanges it at `oauth2.googleapis.com/token` for a short-lived bearer token
+3. Uses the bearer token for all RTDB, Firestore, and Storage scans — always in addition to the default unauthenticated request
+
+Results using the service account token are labeled `PUBLIC_SA` to distinguish them from regular authenticated results (`PUBLIC_AUTH`).
+
+#### What a Service Account Can Access
+An admin-level service account doesn't just bypass security rules for read/write — it grants access to the full Firebase Admin SDK, including:
+- **Realtime Database**: Read/write any path, regardless of security rules
+- **Firestore**: Read/write any collection/document, regardless of security rules
+- **Storage**: Read/write any file in any bucket, regardless of security rules
+- **Firebase Auth Admin API**: List all user accounts, read user data (email, phone, display name, providers, MFA status, custom claims), create/delete users, generate custom auth tokens for user impersonation, and disable MFA
+
+</details>
+
+<details>
 <summary><strong>Resume from Previous Results</strong></summary>
 
 When you have already run extraction and want to skip the extraction phase (JADX decompilation) entirely, you can use:
@@ -268,6 +294,12 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--password` | `-p` | Password for Firebase authentication (required with --check-with-auth) |
 | `--resume-auth-file` | | Path to auth_data.json file or results directory containing saved authentication data for direct authentication (skips trial-and-error auth process) |
 
+### Service Account Authentication
+| Argument | Description |
+|----------|-------------|
+| `--service-account` | Service account email (client_email) for admin-level authentication via Google OAuth2 JWT flow (bypasses security rules) |
+| `--private-key` | Path to PEM private key file for service account authentication (required with --service-account). Also accepts inline key strings with `\n` escapes |
+
 
 ## Examples
 
@@ -306,6 +338,17 @@ openfirebase --resume ./2025-08-31_20-30-00_results --exclude-project-id "abc-pr
 #### Full read scan using project ID (cert-sha1 and package name are optional but needed if there are Google API restrictions)
 ```bash
 openfirebase --project-id openfirebase --read-all --check-with-auth --email pentester@company.com --password SecurePass123 --api-key AIz... --app-id 1:482910573864:android:ab12cd34ef56gh78ij90kl --cert-sha1 1126abfb2cc0656875e50099d1bb5376276ae5a5 --package-name com.openfire.base --proxy http://127.0.0.1:8080 
+```
+
+#### Scan with service account credentials from a JSON key file
+```bash
+openfirebase --project-id my-project --service-account firebase-adminsdk-xxxxx@my-project.iam.gserviceaccount.com --private-key /path/to/serviceAccountKey.pem --read-all
+```
+
+#### Extract APK and automatically use any found service account credentials
+```bash
+# If a service account is found during extraction, it will be used automatically for scanning
+openfirebase -f app.apk --read-all
 ```
 
 ## Disclaimer

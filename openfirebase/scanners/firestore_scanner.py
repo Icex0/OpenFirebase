@@ -250,7 +250,7 @@ class FirestoreScanner(BaseScanner):
             # Just track if we found publicly accessible databases for fuzzing decision
             has_public_access = False
             for url, auth_result in list(self.authenticated_results.items()):
-                if auth_result.get("security") == "PUBLIC_AUTH" and auth_result.get("status") == "200":
+                if auth_result.get("security") in ["PUBLIC_AUTH", "PUBLIC_SA"] and auth_result.get("status") == "200":
                     # ANY authenticated access means the database is accessible - trigger fuzzing
                     has_public_access = True
                     break
@@ -299,6 +299,9 @@ class FirestoreScanner(BaseScanner):
                     if self.firebase_auth:
                         auth_token = self.firebase_auth.get_auth_token(project_id)
                         if auth_token:
+                            is_sa = self.firebase_auth.has_sa_token(project_id)
+                            fuzz_security = "PUBLIC_SA" if is_sa else "PUBLIC_AUTH"
+                            fuzz_auth_label = "service account" if is_sa else "authenticated"
                             try:
                                 # Use Authorization header for Firestore
                                 auth_headers = {"Authorization": f"Bearer {auth_token}"}
@@ -316,30 +319,30 @@ class FirestoreScanner(BaseScanner):
                                             # Collection has data - add to results, auth tracking, and announce
                                             result = self._build_response_dict(
                                                 200,
-                                                f"Firestore collection '{collection_name}' is publicly accessible with authentication",
+                                                f"Firestore collection '{collection_name}' is publicly accessible with {fuzz_auth_label}",
                                                 True,
-                                                "PUBLIC_AUTH",
+                                                fuzz_security,
                                                 auth_response.text,
                                             )
                                             project_results[url] = result
                                             found_collections.append(collection_name)
                                             # Only add to auth success tracking if collection has actual data
                                             self.read_auth_success_urls.add(url)  # Track as read operation
-                                            print(f"   {LIME}[+]{RESET} Found public collection with data (authenticated): {collection_name}")
+                                            print(f"   {LIME}[+]{RESET} Found public collection with data ({fuzz_auth_label}): {collection_name}")
                                     except (ValueError, json.JSONDecodeError):
                                         # Can't parse JSON, treat as having data
                                         result = self._build_response_dict(
                                             200,
-                                            f"Firestore collection '{collection_name}' is publicly accessible with authentication",
+                                            f"Firestore collection '{collection_name}' is publicly accessible with {fuzz_auth_label}",
                                             True,
-                                            "PUBLIC_AUTH",
+                                            fuzz_security,
                                             auth_response.text,
                                         )
                                         project_results[url] = result
                                         found_collections.append(collection_name)
                                         # Only add to auth success tracking if collection has actual data
                                         self.read_auth_success_urls.add(url)  # Track as read operation
-                                        print(f"   {LIME}[+]{RESET} Found public collection with data (authenticated): {collection_name}")
+                                        print(f"   {LIME}[+]{RESET} Found public collection with data ({fuzz_auth_label}): {collection_name}")
                                 # Don't add failed/protected collections to results to avoid verbose output
                             except Exception:
                                 # Ignore request failures during fuzzing

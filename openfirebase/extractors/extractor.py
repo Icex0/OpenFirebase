@@ -4,10 +4,11 @@ This module contains the FirebaseExtractor class that handles
 extracting Firebase items from APK files by parsing strings.xml.
 """
 
+import json
 import re
 import threading
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..core.config import FILTERED_COLLECTION_VALUES, FILTERED_DOMAINS
 from ..parsers.pattern_loader import get_firebase_patterns, get_pattern_metadata
@@ -148,6 +149,78 @@ class FirebaseExtractor:
 
         return firebase_items
 
+    def _extract_service_accounts_from_apk(self, apk_path: Path) -> List[Dict[str, str]]:
+        """Extract service account credentials from APK assets/ and res/raw/ directories.
+
+        Uses androguard to read files directly from the APK without decompilation.
+
+        Returns:
+            List of dicts with keys: client_email, private_key, project_id
+
+        """
+        service_accounts = []
+        seen_emails = set()
+
+        try:
+            apk = APK(apk_path)
+
+            # Check all files in the APK for service account JSON
+            for filepath in apk.get_files():
+                # Only check assets/ and res/raw/ directories, and .json files at root
+                lower_path = filepath.lower()
+                if not (
+                    lower_path.startswith("assets/")
+                    or lower_path.startswith("res/raw")
+                    or (lower_path.endswith(".json") and "/" not in filepath)
+                ):
+                    continue
+
+                if not lower_path.endswith(".json"):
+                    continue
+
+                try:
+                    file_content = apk.get_file(filepath)
+                    if not file_content:
+                        continue
+                    content = file_content.decode("utf-8", errors="ignore")
+                    sa = self._parse_service_account_json(content)
+                    if sa and sa["client_email"] not in seen_emails:
+                        seen_emails.add(sa["client_email"])
+                        service_accounts.append(sa)
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        return service_accounts
+
+    @staticmethod
+    def _parse_service_account_json(content: str) -> Optional[Dict[str, str]]:
+        """Try to parse a service account JSON from file content."""
+        try:
+            data = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        if data.get("type") != "service_account":
+            return None
+
+        client_email = data.get("client_email", "")
+        private_key = data.get("private_key", "")
+        project_id = data.get("project_id", "")
+
+        if client_email and private_key and "-----BEGIN" in private_key:
+            return {
+                "client_email": client_email,
+                "private_key": private_key,
+                "project_id": project_id,
+            }
+        return None
+
     def extract_from_apk(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Extract Firebase items from strings.xml in a single APK file with 2-minute timeout."""
         result = []
@@ -186,6 +259,14 @@ class FirebaseExtractor:
     def process_apk(self, apk_path: Path) -> List[Tuple[str, str]]:
         """Process a single APK file and return Firebase items."""
         firebase_items = self.extract_from_apk(apk_path)
+
+        # Extract service account credentials from assets/raw
+        service_accounts = self._extract_service_accounts_from_apk(apk_path)
+        for sa in service_accounts:
+            firebase_items.append(("Service_Account_Email", sa["client_email"]))
+            firebase_items.append(("Service_Account_Private_Key", sa["private_key"]))
+            if sa["project_id"]:
+                firebase_items.append(("Service_Account_Project_ID", sa["project_id"]))
 
         # Extract APK signature and package name for Remote Config
         from .signature_extractor import SignatureExtractor

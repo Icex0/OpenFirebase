@@ -313,7 +313,11 @@ def get_apk_package_name(apk_path: Path) -> Optional[str]:
 def format_firebase_items_status(
     package_name: str, firebase_items: List[Tuple[str, str]], extraction_type: str
 ) -> str:
-    """Format Firebase items status message similar to final output file format with color coding.
+    """Format Firebase items status message with color coding.
+
+    This is the single source of truth for console display of extracted Firebase items.
+    Used by single-file mode, directory mode (multiprocessing), and resume mode (via
+    FileHandler.print_results).
 
     Args:
         package_name: Name of the APK package
@@ -324,22 +328,25 @@ def format_firebase_items_status(
         Formatted status message string with ANSI color codes
 
     """
+    from .handlers.file_handler import FileHandler
 
     if not firebase_items:
-        # Red color for no items found
         return f"{RED}[{package_name}] {extraction_type} extraction: No Firebase items found{RESET}"
 
-    # Group items by header type (similar to file_handler logic)
+    # Group items by header type (strip source labels for grouping)
     grouped_links = {}
     for header, value in firebase_items:
-        # Extract base header by removing source labels like "(JADX)" or "(Fast)"
         base_header = re.sub(r"\s*\([^)]+\)$", "", header)
+
+        # Filter out invalid collection names
+        if "Collection" in base_header:
+            if not FileHandler._is_valid_collection_name(value):
+                continue
 
         if base_header not in grouped_links:
             grouped_links[base_header] = []
         grouped_links[base_header].append(value)
 
-    # Create status message with green color for packages with items
     status_lines = [
         f"{GREEN}[{package_name}] {extraction_type} extraction: {len(firebase_items)} items found{RESET}"
     ]
@@ -348,6 +355,7 @@ def format_firebase_items_status(
         unique_values = list(
             dict.fromkeys(values)
         )  # Remove duplicates while preserving order
+
         if len(unique_values) == 1:
             status_lines.append(f"  • {header}: {unique_values[0]}")
         else:

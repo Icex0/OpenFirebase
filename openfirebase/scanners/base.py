@@ -199,18 +199,25 @@ class BaseScanner(ABC):
             Response dictionary for the original request (auth retries stored separately)
 
         """
-        # If we got a 401 (Unauthorized) or 403 (Forbidden) and have Firebase auth, try authenticated request
-        if response.status_code in [401, 403] and self.firebase_auth:
+        # If we have Firebase auth, try authenticated request
+        if self.firebase_auth:
             project_id = self._extract_project_id_from_url(url)
             if project_id:
-                # Determine operation type based on HTTP method
-                operation_type = "write" if method.upper() in ["POST", "PUT", "DELETE"] else "read"
-                # Try to get or create auth token for this project
-                auth_response = self._try_authenticated_request(
-                    url, method, operation_type=operation_type, timeout=self.timeout, **request_kwargs
+                # For service account auth: always try (bypasses security rules, may return more data)
+                # For regular auth: only retry on 401/403
+                should_try_auth = (
+                    self.firebase_auth.has_sa_token(project_id)
+                    or response.status_code in [401, 403]
                 )
-                # Note: _try_authenticated_request now stores the auth result internally
-                # We always continue to show the original result, auth results shown separately
+                if should_try_auth:
+                    # Determine operation type based on HTTP method
+                    operation_type = "write" if method.upper() in ["POST", "PUT", "DELETE"] else "read"
+                    # Try to get or create auth token for this project
+                    auth_response = self._try_authenticated_request(
+                        url, method, operation_type=operation_type, timeout=self.timeout, **request_kwargs
+                    )
+                    # Note: _try_authenticated_request now stores the auth result internally
+                    # We always continue to show the original result, auth results shown separately
 
         # Handle standard responses
         if response.status_code == 200:
@@ -356,10 +363,15 @@ class BaseScanner(ABC):
             # Store authenticated result for later display (don't print immediately)
             auth_result = {}
 
+            # Determine if this is a service account token for labeling
+            is_sa = self.firebase_auth and self.firebase_auth.has_sa_token(project_id)
+            auth_label = "service account" if is_sa else "authenticated"
+            security_suffix = "_SA" if is_sa else "_AUTH"
+
             # Determine response message based on status code
             if response.status_code == 200:
-                auth_result["message"] = "Public access (authenticated)"
-                auth_result["security"] = "PUBLIC_AUTH"
+                auth_result["message"] = f"Public access ({auth_label})"
+                auth_result["security"] = f"PUBLIC{security_suffix}"
 
                 # For Firestore, track auth success more carefully
                 should_track = True
@@ -975,7 +987,7 @@ class BaseScanner(ABC):
                     if (
                         resource_type == "firestore"
                         and status == STATUS_OK
-                        and security in ["PUBLIC", "PUBLIC_AUTH"]
+                        and security in ["PUBLIC", "PUBLIC_AUTH", "PUBLIC_SA"]
                     ):
                         counts["total_open_collections_count"] += 1
                     elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
@@ -1205,11 +1217,13 @@ class BaseScanner(ABC):
                     if project_id not in open_results:
                         open_results[project_id] = {}
                     # Create a combined result entry for the open file
+                    auth_security = auth_result.get("security", "PUBLIC_AUTH")
+                    auth_message = "Accessible with service account" if auth_security == "PUBLIC_SA" else "Accessible with authentication"
                     open_results[project_id][url] = {
                         "status": status,
-                        "message": "Accessible with authentication",
+                        "message": auth_message,
                         "accessible": True,
-                        "security": "PUBLIC_AUTH",
+                        "security": auth_security,
                         "response_content": auth_result.get("response_content", "")
                     }
 
@@ -1578,7 +1592,7 @@ class BaseScanner(ABC):
             has_no_auth = False
             for project_results in scan_results.values():
                 for result in project_results.values():
-                    if result.get("security") == "PUBLIC_AUTH":
+                    if result.get("security") in ["PUBLIC_AUTH", "PUBLIC_SA"]:
                         has_auth_only = True
                     elif result.get("security") in ["PUBLIC", "PUBLIC_DB_NONEXISTENT_COLLECTION"]:
                         has_no_auth = True

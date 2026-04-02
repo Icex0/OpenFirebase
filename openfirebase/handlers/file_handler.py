@@ -6,9 +6,8 @@ This module handles all file I/O operations for the OpenFirebase tool.
 import re
 from typing import Dict, List, Set, Tuple
 
-from ..core.config import FILTERED_COLLECTION_VALUES, GREEN, RESET
+from ..core.config import BLUE, FILTERED_COLLECTION_VALUES, GREEN, RED, RESET, YELLOW
 from ..parsers.pattern_loader import get_invalid_collection_prefixes
-
 
 class FileHandler:
     """Handles file I/O operations for Firebase link results."""
@@ -74,12 +73,14 @@ class FileHandler:
                 for base_header, items in grouped_links.items():
                     file.write(f"[{base_header}]\n")
                     for header, value in items:
+                        # Escape newlines in values (e.g. PEM private keys) to keep one-line format
+                        escaped_value = value.replace("\n", "\\n") if "\n" in value else value
                         # Show source info if it exists
                         source_info = re.search(r"\s*(\([^)]+\))$", header)
                         if source_info:
-                            file.write(f"- {value} {source_info.group(1)}\n")
+                            file.write(f"- {escaped_value} {source_info.group(1)}\n")
                         else:
-                            file.write(f"- {value}\n")
+                            file.write(f"- {escaped_value}\n")
                 file.write("\n")
         except Exception as e:
             # Return error for main process to handle with tqdm.write()
@@ -96,7 +97,13 @@ class FileHandler:
 
     @staticmethod
     def print_results(results: Dict[str, List[Tuple[str, str]]]):
-        """Print extracted results to console using bullet-point format (same as directory mode)."""
+        """Print extracted results to console using bullet-point format.
+
+        Delegates to format_firebase_items_status for consistent formatting
+        across single-file, directory, and resume modes.
+        """
+        from ..utils import format_firebase_items_status
+
         if not results:
             print("No Firebase items found.")
             return
@@ -109,37 +116,7 @@ class FileHandler:
                 if "(Fast)" in first_header:
                     extraction_type = "Fast"
 
-            # Use the same format as directory mode
-            print(f"{GREEN}[{package_name}] {extraction_type} extraction: {len(links)} items found{RESET}")
-
-            # Group links by header type (strip source labels for grouping)
-            grouped_links = {}
-            for header, value in links:
-                # Extract base header by removing source labels like "(JADX)" or "(Fast)"
-                base_header = re.sub(r"\s*\([^)]+\)$", "", header)
-
-                # Filter out invalid collection names for collection headers
-                if "Collection" in base_header:
-                    if not FileHandler._is_valid_collection_name(value):
-                        continue
-
-                if base_header not in grouped_links:
-                    grouped_links[base_header] = []
-                grouped_links[base_header].append(value)
-
-            # Print grouped results with bullet-point format
-            for header, values in grouped_links.items():
-                unique_values = list(
-                    dict.fromkeys(values)
-                )  # Remove duplicates while preserving order
-                if len(unique_values) == 1:
-                    print(f"  • {header}: {unique_values[0]}")
-                else:
-                    print(f"  • {header}: {len(unique_values)} items")
-                    for value in unique_values[:3]:  # Show first 3 items
-                        print(f"    - {value}")
-                    if len(unique_values) > 3:
-                        print(f"    ... and {len(unique_values) - 3} more")
+            print(format_firebase_items_status(package_name, links, extraction_type))
 
     @staticmethod
     def extract_unique_collections_and_documents(
@@ -176,7 +153,7 @@ class FileHandler:
                 for collection in sorted(collections):
                     f.write(f"{collection}\n")
             print(
-                f"Unique collection names saved to {output_file} ({len(collections)} collections)"
+                f"{BLUE}[INF]{RESET} Unique collection names saved to {output_file} ({len(collections)} collections)"
             )
 
     @staticmethod

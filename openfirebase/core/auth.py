@@ -6,6 +6,7 @@ authenticated scanning capabilities.
 
 import base64
 import json
+import time
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -49,6 +50,136 @@ class FirebaseAuth:
 
         # Store JWT aud validation results
         self._jwt_project_mapping: Dict[str, str] = {}  # Maps project_id -> aud_project_id
+
+        # Service account authentication
+        self._sa_tokens: Dict[str, Tuple[str, float]] = {}  # project_id -> (access_token, expiry_time)
+        self._sa_credentials: Dict[str, Dict[str, str]] = {}  # project_id -> {client_email, private_key}
+
+    def authenticate_with_service_account(
+        self,
+        project_id: str,
+        client_email: str,
+        private_key: str,
+    ) -> Optional[str]:
+        """Authenticate using a service account via Google OAuth2 JWT flow.
+
+        Signs a JWT with the private key and exchanges it at Google's OAuth2
+        token endpoint for a short-lived access token that bypasses security rules.
+
+        Args:
+            project_id: Firebase project ID
+            client_email: Service account email (iss claim)
+            private_key: PEM-encoded private key for RS256 signing
+
+        Returns:
+            Access token if successful, None if failed
+
+        """
+        # Check cache first
+        if project_id in self._sa_tokens:
+            token, expiry = self._sa_tokens[project_id]
+            if time.time() < expiry - 60:  # 60s buffer before expiry
+                return token
+
+        try:
+            import jwt as pyjwt
+        except ImportError:
+            print(f"{RED}[SA-AUTH]{RESET} PyJWT library not installed. Install with: pip install PyJWT cryptography")
+            return None
+
+        try:
+            now = int(time.time())
+            scopes = " ".join([
+                "https://www.googleapis.com/auth/firebase",
+                "https://www.googleapis.com/auth/datastore",
+                "https://www.googleapis.com/auth/devstorage.full_control",
+                "https://www.googleapis.com/auth/cloud-platform",
+            ])
+
+            # Build JWT claims
+            claims = {
+                "iss": client_email,
+                "scope": scopes,
+                "aud": "https://oauth2.googleapis.com/token",
+                "iat": now,
+                "exp": now + 3600,  # 1 hour
+            }
+
+            # Sign the JWT with the private key
+            signed_jwt = pyjwt.encode(claims, private_key, algorithm="RS256")
+
+            print(f"{BLUE}[SA-AUTH]{RESET} Requesting access token for project: {project_id} ({client_email})")
+
+            # Exchange JWT for access token
+            # Override Content-Type since session has application/json set globally
+            response = self.session.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                    "assertion": signed_jwt,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=self.timeout,
+            )
+
+            if response.status_code == 200:
+                token_data = response.json()
+                access_token = token_data.get("access_token")
+                expires_in = token_data.get("expires_in", 3600)
+
+                if access_token:
+                    # Cache the token
+                    self._sa_tokens[project_id] = (access_token, time.time() + expires_in)
+                    self._sa_credentials[project_id] = {
+                        "client_email": client_email,
+                        "private_key": private_key,
+                    }
+                    # Also store in regular token cache so scanners can use it
+                    self._auth_tokens[project_id] = access_token
+                    self._jwt_project_mapping[project_id] = project_id
+                    print(f"{GREEN}[SA-AUTH]{RESET} Successfully obtained access token for project {project_id}")
+                    return access_token
+
+                print(f"{RED}[SA-AUTH]{RESET} No access_token in response for project {project_id}")
+                return None
+            else:
+                error_msg = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("error_description", error_data.get("error", "Unknown error"))
+                except ValueError:
+                    error_msg = response.text[:200]
+                print(f"{RED}[SA-AUTH]{RESET} Token exchange failed for project {project_id}: {error_msg}")
+                self._auth_failures[project_id] = f"SA token exchange failed: {error_msg}"
+                return None
+
+        except Exception as e:
+            print(f"{RED}[SA-AUTH]{RESET} Error authenticating service account for project {project_id}: {e}")
+            self._auth_failures[project_id] = f"SA auth error: {e}"
+            return None
+
+    def get_sa_token(self, project_id: str) -> Optional[str]:
+        """Get service account access token for a project.
+
+        Returns:
+            Access token if available and not expired, None otherwise
+
+        """
+        if project_id in self._sa_tokens:
+            token, expiry = self._sa_tokens[project_id]
+            if time.time() < expiry - 60:
+                return token
+            # Token expired, try to refresh
+            creds = self._sa_credentials.get(project_id)
+            if creds:
+                return self.authenticate_with_service_account(
+                    project_id, creds["client_email"], creds["private_key"]
+                )
+        return None
+
+    def has_sa_token(self, project_id: str) -> bool:
+        """Check if a service account token exists for the given project."""
+        return project_id in self._sa_tokens
 
     def create_account_and_get_token(
         self,
