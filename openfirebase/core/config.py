@@ -61,7 +61,7 @@ FILTERED_DOMAINS = [
     "test.firebaseio.com",
     "demo.firebaseio.com",
     "chrome-devtools-frontend",
-    "-default-rtdb.firebaseio.com", # If defined as getProjectId() + "-default-rtdb.firebaseio.com";
+    "getprojectid()-default-rtdb.firebaseio.com",
 ]
 
 # Filtered collection values to exclude from extraction
