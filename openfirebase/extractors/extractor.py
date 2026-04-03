@@ -129,6 +129,10 @@ class FirebaseExtractor:
                     ):
                         continue
 
+                    # Filter out template fragments like "default-rtdb.firebaseio.com"
+                    if link.lower().startswith("default-rtdb."):
+                        continue
+
                     # Filter out collection values that are in the filtered list
                     if "Collection" in header:
                         if link.lower() in [value.lower() for value in FILTERED_COLLECTION_VALUES]:

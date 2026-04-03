@@ -413,6 +413,10 @@ class JADXExtractor:
                 if self._should_skip_firebase_example_domains(link):
                     continue
 
+                # Filter out template fragments like "default-rtdb.firebaseio.com"
+                if link.lower().startswith("default-rtdb."):
+                    continue
+
                 # Filter out code-like patterns for Firestore names
                 if self._should_skip_firestore_code_patterns(header, link):
                     continue

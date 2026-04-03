@@ -32,7 +32,7 @@
       "capture_group": 1
     },
     "Firebase_Database_US": {
-      "pattern": "([a-z0-9-]+)\\.firebaseio\\.com/?[^\\s\"'<>]*",
+      "pattern": "([a-z0-9][a-z0-9-]*[a-z0-9])\\.firebaseio\\.com/?[^\\s\"'<>]*",
       "description": "Firebase Realtime Database URLs (US region) - captures project ID",
       "capture_group": 0
     },
