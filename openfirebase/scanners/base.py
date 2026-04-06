@@ -642,19 +642,24 @@ class BaseScanner(ABC):
             RED = GREEN = LIME = YELLOW = GREY = GOLD = BLUE = RESET = ""
         
         if resource_type == "storage":
-            # Storage-specific messages
+            # Storage-specific messages.
+            # Firebase Storage and the underlying GCS bucket are governed by
+            # different access systems, so always tell the user which one
+            # the result came from.
+            surface = result.get("surface") if isinstance(result, dict) else None
+            surface_tag = f" [{surface}]" if surface else ""
             if status == STATUS_OK:
                 if "write access allowed" in message or "upload successful" in message:
-                    return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED - This storage bucket allows file uploads!"
-                return f"{LIME}[+]{RESET} PUBLIC STORAGE - This storage bucket is publicly accessible!"
+                    return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED{surface_tag} - This storage bucket allows file uploads!"
+                return f"{LIME}[+]{RESET} PUBLIC STORAGE{surface_tag} - This storage bucket is publicly accessible!"
             if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
                 if (
                     "WRITE_FORBIDDEN" in security
                     or "AUTH_REQUIRED" in security
                     or "WRITE_DENIED" in security
                 ):
-                    return f"{RED}[-]{RESET} WRITE DENIED - Storage bucket requires authentication for write access"
-                return f"{RED}[-]{RESET} PERMISSION DENIED - Storage bucket is protected"
+                    return f"{RED}[-]{RESET} WRITE DENIED{surface_tag} - Storage bucket requires authentication for write access"
+                return f"{RED}[-]{RESET} PERMISSION DENIED{surface_tag} - Storage bucket is protected"
             if status == STATUS_PRECONDITION_FAILED:
                 if "WRITE_PRECONDITION_FAILED" in security:
                     return f"{RED}[-]{RESET} WRITE PRECONDITION FAILED - Storage bucket write requirements not met"
@@ -878,6 +883,9 @@ class BaseScanner(ABC):
         if "firestore.googleapis.com" in url:
             return "firestore"
         if "firebasestorage.googleapis.com" in url:
+            return "storage"
+        # Underlying GCS bucket — same resource (storage), different access system
+        if "storage.googleapis.com" in url:
             return "storage"
         if "firebaseremoteconfig.googleapis.com" in url:
             return "config"

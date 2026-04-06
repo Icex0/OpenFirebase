@@ -381,9 +381,11 @@ When using the `--read-rtdb` or `--write-rtdb` options, the script will scan all
 
 When using the `--read-storage` or `--write-storage` options, the script will scan all unique Firebase project IDs to check storage bucket accessibility:
 
-- Tests Firebase Storage bucket URLs:
+- Tests both the Firebase Storage REST API and the underlying Google Cloud Storage JSON API for each bucket suffix. The two surfaces are governed by different access systems (Firebase Storage Rules vs GCS IAM), so a bucket can be public on one and locked on the other:
   - `https://firebasestorage.googleapis.com/v0/b/PROJECT_ID.appspot.com/o`
   - `https://firebasestorage.googleapis.com/v0/b/PROJECT_ID.firebasestorage.app/o`
+  - `https://storage.googleapis.com/storage/v1/b/PROJECT_ID.appspot.com/o`
+  - `https://storage.googleapis.com/storage/v1/b/PROJECT_ID.firebasestorage.app/o`
 - **Read Testing (`--read-storage`)**: Evaluates response status codes:
   - **200**: Public storage access.
   - **400**: Storage rules version 1 - listing disallowed.

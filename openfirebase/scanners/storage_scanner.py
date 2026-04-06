@@ -17,6 +17,26 @@ from .base import BaseScanner
 class StorageScanner(BaseScanner):
     """Scans Firebase Storage buckets to check accessibility and security status."""
 
+    # Bucket name suffixes Firebase uses
+    _BUCKET_SUFFIXES = ("appspot.com", "firebasestorage.app")
+
+    def _build_read_urls(self, project_id: str) -> List[str]:
+        """Build the list of storage read URLs to probe for a project.
+
+        Covers both Firebase Storage REST endpoints and the underlying
+        Cloud Storage JSON API. The two surfaces are governed by different
+        access systems (Firebase Storage Rules vs GCS IAM), so a bucket
+        can be public on one and locked on the other.
+        """
+        urls: List[str] = []
+        for suffix in self._BUCKET_SUFFIXES:
+            bucket = f"{project_id}.{suffix}"
+            # Firebase Storage REST API (governed by Firebase Storage Rules)
+            urls.append(f"https://firebasestorage.googleapis.com/v0/b/{bucket}/o")
+            # Underlying GCS bucket via JSON API (governed by GCS IAM)
+            urls.append(f"https://storage.googleapis.com/storage/v1/b/{bucket}/o")
+        return urls
+
     def scan_project_id(self, project_id: str) -> Dict[str, str]:
         """Scan a Firebase project ID for storage bucket accessibility.
 
@@ -29,17 +49,30 @@ class StorageScanner(BaseScanner):
         """
         results = {}
 
-        # Firebase Storage bucket URLs to test
-        urls_to_test = [
-            f"https://firebasestorage.googleapis.com/v0/b/{project_id}.appspot.com/o",
-            f"https://firebasestorage.googleapis.com/v0/b/{project_id}.firebasestorage.app/o",
-        ]
-
-        for url in urls_to_test:
+        for url in self._build_read_urls(project_id):
             result = self._test_storage_url(url)
-            results[url] = result
+            results[url] = self._tag_surface(url, result)
 
         return results
+
+    @staticmethod
+    def _surface_for_url(url: str) -> str:
+        """Return the human label for which access system governs this URL.
+
+        - 'Firebase Rules': firebasestorage.googleapis.com (Firebase Storage Security Rules)
+        - 'GCS IAM':        storage.googleapis.com         (Google Cloud Storage IAM)
+        """
+        if "firebasestorage.googleapis.com" in url:
+            return "Firebase Rules"
+        if "storage.googleapis.com" in url:
+            return "GCS IAM"
+        return "Unknown"
+
+    def _tag_surface(self, url: str, result: Dict[str, str]) -> Dict[str, str]:
+        """Attach the access-system label to a result dict in-place."""
+        if isinstance(result, dict):
+            result["surface"] = self._surface_for_url(url)
+        return result
 
     def _test_storage_url(self, url: str) -> Dict[str, str]:
         """Test a specific storage bucket URL and return the result.
@@ -178,17 +211,30 @@ class StorageScanner(BaseScanner):
         # Get filename from the file path
         file_name = os.path.basename(file_path)
 
-        # Firebase Storage bucket URLs to test (similar to read operations)
-        urls_to_test = [
-            f"https://firebasestorage.googleapis.com/v0/b/{project_id}.appspot.com/o?name={file_name}",
-            f"https://firebasestorage.googleapis.com/v0/b/{project_id}.firebasestorage.app/o?name={file_name}",
-        ]
-
-        for url in urls_to_test:
+        for url in self._build_write_urls(project_id, file_name):
             result = self._test_storage_write_url(url, file_path)
-            results[url] = result
+            results[url] = self._tag_surface(url, result)
 
         return results
+
+    def _build_write_urls(self, project_id: str, file_name: str) -> List[str]:
+        """Build the list of storage write URLs to probe for a project.
+
+        Covers both Firebase Storage REST upload and the underlying
+        Cloud Storage JSON upload API, since IAM and Firebase rules
+        are independent.
+        """
+        urls: List[str] = []
+        for suffix in self._BUCKET_SUFFIXES:
+            bucket = f"{project_id}.{suffix}"
+            urls.append(
+                f"https://firebasestorage.googleapis.com/v0/b/{bucket}/o?name={file_name}"
+            )
+            urls.append(
+                f"https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o"
+                f"?uploadType=media&name={file_name}"
+            )
+        return urls
 
     def _test_storage_write_url(self, url: str, file_path: str) -> Dict[str, str]:
         """Test write access to a specific storage bucket URL.
