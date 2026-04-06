@@ -177,6 +177,57 @@ class FirebaseAuth:
                 )
         return None
 
+    def test_sa_project_access(self, project_id: str, access_token: str, session=None) -> bool:
+        """Test if SA token has any permissions on a project via testIamPermissions.
+
+        Args:
+            project_id: Firebase/GCP project ID to test
+            access_token: OAuth2 access token
+            session: requests session to use (for proxy/SSL settings)
+
+        Returns:
+            True if the SA has at least one permission on the project
+
+        """
+        req = session or self.session
+        url = f"https://cloudresourcemanager.googleapis.com/v1/projects/{project_id}:testIamPermissions"
+        # Test a small set of broad permissions
+        test_permissions = [
+            "firebase.projects.get",
+            "firebaseauth.users.get",
+            "firebasedatabase.instances.list",
+            "datastore.databases.get",
+            "storage.buckets.list",
+        ]
+        try:
+            response = req.post(
+                url,
+                json={"permissions": test_permissions},
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=self.timeout,
+            )
+            if response.status_code == 200:
+                granted = response.json().get("permissions", [])
+                if granted:
+                    print(f"{GREEN}[SA-AUTH]{RESET} SA has {len(granted)} permission(s) on project {project_id}")
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def register_sa_token(self, project_id: str, access_token: str, client_email: str, private_key: str):
+        """Register an already-obtained SA token for an additional project."""
+        self._sa_tokens[project_id] = (access_token, time.time() + 3600)
+        self._sa_credentials[project_id] = {
+            "client_email": client_email,
+            "private_key": private_key,
+        }
+        self._auth_tokens[project_id] = access_token
+        self._jwt_project_mapping[project_id] = project_id
+
     def has_sa_token(self, project_id: str) -> bool:
         """Check if a service account token exists for the given project."""
         return project_id in self._sa_tokens

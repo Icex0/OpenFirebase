@@ -930,7 +930,18 @@ class OpenFirebaseOrchestrator:
 
         return False
 
-    def _setup_service_account_auth(self, firebase_auth, args, project_ids, results=None):
+    @staticmethod
+    def _extract_project_from_sa_email(sa_email: str) -> str:
+        """Extract project ID from a service account email.
+
+        e.g. firebase-adminsdk-xxx@PROJECT_ID.iam.gserviceaccount.com -> PROJECT_ID
+        """
+        if "@" in sa_email and ".iam.gserviceaccount.com" in sa_email:
+            domain = sa_email.split("@", 1)[1]
+            return domain.split(".iam.gserviceaccount.com", 1)[0]
+        return None
+
+    def _setup_service_account_auth(self, firebase_auth, args, project_ids, results=None, package_project_ids=None):
         """Set up service account authentication tokens.
 
         Handles both CLI-provided and APK-extracted service account credentials.
@@ -940,29 +951,35 @@ class OpenFirebaseOrchestrator:
 
         # 1. CLI-provided service account
         if getattr(args, "service_account", None) and getattr(args, "private_key_content", None):
-            for project_id in sorted(project_ids):
-                token = firebase_auth.authenticate_with_service_account(
-                    project_id,
-                    args.service_account,
-                    args.private_key_content,
-                )
-                if token:
-                    sa_count += 1
-                    break  # One SA token works for all projects under the same GCP project
-            # If authenticated successfully, apply the token to all project IDs
-            if sa_count > 0:
-                # The first successful project_id has the token; copy to others
+            # Get one token (SA tokens are project-agnostic, scoped to APIs)
+            sa_home_project = self._extract_project_from_sa_email(args.service_account)
+            first_project = sa_home_project if sa_home_project and sa_home_project in project_ids else sorted(project_ids)[0]
+            token = firebase_auth.authenticate_with_service_account(
+                first_project,
+                args.service_account,
+                args.private_key_content,
+            )
+            if token:
+                sa_count += 1
+                # Test permissions on all other projects and register token where it has access
                 for pid in project_ids:
-                    if not firebase_auth.has_sa_token(pid):
-                        firebase_auth.authenticate_with_service_account(
-                            pid,
-                            args.service_account,
-                            args.private_key_content,
-                        )
+                    if pid != first_project:
+                        if firebase_auth.test_sa_project_access(pid, token):
+                            firebase_auth.register_sa_token(pid, token, args.service_account, args.private_key_content)
+                            sa_count += 1
+                        else:
+                            print(f"{YELLOW}[SA-AUTH]{RESET} SA has no permissions on project {pid} — skipping SA auth for this project")
 
         # 2. APK-extracted service accounts
         if results:
             for package_name, links in results.items():
+                # Scope to this package's project IDs only
+                pkg_project_ids = set()
+                if package_project_ids and package_name in package_project_ids:
+                    pkg_project_ids = set(package_project_ids[package_name])
+                if not pkg_project_ids:
+                    pkg_project_ids = project_ids  # Fallback to all
+
                 # Collect all SA credentials, paired by order of appearance
                 sa_credentials = []
                 current_email = None
@@ -985,12 +1002,23 @@ class OpenFirebaseOrchestrator:
                     sa_credentials.append((current_email, current_key, current_project_id))
 
                 for sa_email, sa_key, sa_project_id in sa_credentials:
-                    target_ids = [sa_project_id] if sa_project_id and sa_project_id in project_ids else list(project_ids)
-                    for pid in target_ids:
-                        if not firebase_auth.has_sa_token(pid):
-                            token = firebase_auth.authenticate_with_service_account(pid, sa_email, sa_key)
-                            if token:
-                                sa_count += 1
+                    # Determine the SA's home project
+                    if not sa_project_id or sa_project_id not in pkg_project_ids:
+                        sa_project_id = self._extract_project_from_sa_email(sa_email)
+                    first_project = sa_project_id if sa_project_id and sa_project_id in pkg_project_ids else sorted(pkg_project_ids)[0]
+
+                    if not firebase_auth.has_sa_token(first_project):
+                        token = firebase_auth.authenticate_with_service_account(first_project, sa_email, sa_key)
+                        if token:
+                            sa_count += 1
+                            # Test permissions on other projects from the same package
+                            for pid in pkg_project_ids:
+                                if pid != first_project and not firebase_auth.has_sa_token(pid):
+                                    if firebase_auth.test_sa_project_access(pid, token):
+                                        firebase_auth.register_sa_token(pid, token, sa_email, sa_key)
+                                        sa_count += 1
+                                    else:
+                                        print(f"{YELLOW}[SA-AUTH]{RESET} SA has no permissions on project {pid} — skipping SA auth for this project")
 
         if sa_count > 0:
             print(f"{GREEN}[SA-AUTH]{RESET} Service account authentication set up for {sa_count} project(s)")
@@ -1171,7 +1199,7 @@ class OpenFirebaseOrchestrator:
 
         # Setup service account authentication if available
         if firebase_auth and self._has_service_account_auth(args, results):
-            self._setup_service_account_auth(firebase_auth, args, project_ids, results)
+            self._setup_service_account_auth(firebase_auth, args, project_ids, results, package_project_ids)
 
         # Scan databases
         if scan_rtdb:
