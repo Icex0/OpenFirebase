@@ -134,7 +134,9 @@ class FirebaseAuth:
                         "client_email": client_email,
                         "private_key": private_key,
                     }
-                    # Also store in regular token cache so scanners can use it
+                    # SA token takes priority over ID token from --check-with-auth
+                    if project_id in self._auth_tokens and project_id not in self._sa_tokens:
+                        print(f"{BLUE}[SA-AUTH]{RESET} SA token overrides existing auth token for project {project_id}")
                     self._auth_tokens[project_id] = access_token
                     self._jwt_project_mapping[project_id] = project_id
                     print(f"{GREEN}[SA-AUTH]{RESET} Successfully obtained access token for project {project_id}")

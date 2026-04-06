@@ -223,85 +223,50 @@ def validate_remote_config_options(
 
 
 def validate_write_options(
-    write_storage: bool,
-    write_storage_file: Optional[Path],
-    write_firestore: bool,
-    write_firestore_value: Optional[str],
-    write_rtdb: bool,
-    write_rtdb_file: Optional[Path],
+    write_storage: Optional[Path],
+    write_firestore: Optional[str],
+    write_rtdb: Optional[Path],
     write_all: bool
 ) -> None:
     """Validate write operation requirements."""
-    if write_storage:
-        if write_storage_file is None:
+    if write_storage is not None:
+        if not write_storage.exists():
             raise typer.BadParameter(
-                "--write-storage requires --write-storage-file to be specified"
+                f"Storage write file does not exist: {write_storage}"
             )
-        if not write_storage_file.exists():
+        if not write_storage.is_file():
             raise typer.BadParameter(
-                f"Storage write file does not exist: {write_storage_file}"
-            )
-        if not write_storage_file.is_file():
-            raise typer.BadParameter(
-                f"Storage write path must be a file (not a directory): {write_storage_file}"
+                f"Storage write path must be a file (not a directory): {write_storage}"
             )
 
-    if write_firestore:
-        if write_firestore_value is None:
+    if write_firestore is not None:
+        if not write_firestore.strip():
             raise typer.BadParameter(
-                "--write-firestore requires --write-firestore-value to be specified"
-            )
-        if not write_firestore_value.strip():
-            raise typer.BadParameter(
-                "--write-firestore-value cannot be empty"
+                "--write-firestore value cannot be empty"
             )
 
-    if write_rtdb:
-        if write_rtdb_file is None:
+    if write_rtdb is not None:
+        if not write_rtdb.exists():
             raise typer.BadParameter(
-                "--write-rtdb requires --write-rtdb-file to be specified"
+                f"RTDB write file does not exist: {write_rtdb}"
             )
-        if not write_rtdb_file.exists():
+        if not write_rtdb.is_file():
             raise typer.BadParameter(
-                f"RTDB write file does not exist: {write_rtdb_file}"
-            )
-        if not write_rtdb_file.is_file():
-            raise typer.BadParameter(
-                f"RTDB write path must be a file (not a directory): {write_rtdb_file}"
+                f"RTDB write path must be a file (not a directory): {write_rtdb}"
             )
 
     if write_all:
-        if write_storage_file is None:
+        if write_storage is None:
             raise typer.BadParameter(
-                "--write-all requires --write-storage-file to be specified"
+                "--write-all requires --write-storage <file> to be specified"
             )
-        if not write_storage_file.exists():
+        if write_rtdb is None:
             raise typer.BadParameter(
-                f"Storage write file does not exist: {write_storage_file}"
+                "--write-all requires --write-rtdb <file> to be specified"
             )
-        if not write_storage_file.is_file():
+        if write_firestore is None:
             raise typer.BadParameter(
-                f"Storage write path must be a file (not a directory): {write_storage_file}"
-            )
-        if write_rtdb_file is None:
-            raise typer.BadParameter(
-                "--write-all requires --write-rtdb-file to be specified"
-            )
-        if not write_rtdb_file.exists():
-            raise typer.BadParameter(
-                f"RTDB write file does not exist: {write_rtdb_file}"
-            )
-        if not write_rtdb_file.is_file():
-            raise typer.BadParameter(
-                f"RTDB write path must be a file (not a directory): {write_rtdb_file}"
-            )
-        if write_firestore_value is None:
-            raise typer.BadParameter(
-                "--write-all requires --write-firestore-value to be specified"
-            )
-        if not write_firestore_value.strip():
-            raise typer.BadParameter(
-                "--write-firestore-value cannot be empty"
+                "--write-all requires --write-firestore <value> to be specified"
             )
 
 
@@ -490,46 +455,28 @@ def main(
     ),
 
     # Write options
-    write_storage: bool = Option(
-        False,
+    write_storage: Optional[Path] = Option(
+        None,
         "-ws", "--write-storage",
-        help="Test write access to Firebase storage buckets (requires --write-storage-file)",
+        help="Test write access to Firebase storage buckets (provide path to file to upload)",
         rich_help_panel="Write Testing"
     ),
-    write_storage_file: Optional[Path] = Option(
+    write_firestore: Optional[str] = Option(
         None,
-        "--write-storage-file",
-        help="Path to file to upload when testing storage write access (required with --write-storage)",
-        rich_help_panel="Write Testing"
-    ),
-    write_firestore: bool = Option(
-        False,
         "-wf", "--write-firestore",
-        help="Test write access to Firestore databases (requires --write-firestore-value)",
+        help="Test write access to Firestore databases (provide string value to write)",
         rich_help_panel="Write Testing"
     ),
-    write_firestore_value: Optional[str] = Option(
+    write_rtdb: Optional[Path] = Option(
         None,
-        "--write-firestore-value",
-        help="String value to write when testing Firestore write access (required with --write-firestore)",
-        rich_help_panel="Write Testing"
-    ),
-    write_rtdb: bool = Option(
-        False,
         "-wr", "--write-rtdb",
-        help="Test write access to Firebase Realtime Database (requires --write-rtdb-file with JSON data)",
-        rich_help_panel="Write Testing"
-    ),
-    write_rtdb_file: Optional[Path] = Option(
-        None,
-        "--write-rtdb-file",
-        help="Path to JSON file containing data to write when testing RTDB write access (required with --write-rtdb)",
+        help="Test write access to Firebase Realtime Database (provide path to JSON file with data to write)",
         rich_help_panel="Write Testing"
     ),
     write_all: bool = Option(
         False,
         "-wa", "--write-all",
-        help="Test write access to Firebase storage buckets, Firestore databases, and Realtime Database (requires --write-storage-file, --write-rtdb-file, and --write-firestore-value)",
+        help="Test write access to Firebase storage, Firestore, and RTDB (requires --write-storage, --write-rtdb, and --write-firestore)",
         rich_help_panel="Write Testing"
     ),
 
@@ -662,7 +609,7 @@ def main(
 
     validate_credentials_usage(app_id, api_key, project_id, project_id_file, read_config)
     validate_fuzz_collections(fuzz_collections)
-    validate_write_options(write_storage, write_storage_file, write_firestore, write_firestore_value, write_rtdb, write_rtdb_file, write_all)
+    validate_write_options(write_storage, write_firestore, write_rtdb, write_all)
     validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key)
     validate_remote_config_options(read_config, read_all, project_id, project_id_file, api_key, app_id, cert_sha1, package_name)
     private_key_content = validate_service_account_options(service_account, private_key)
@@ -692,12 +639,12 @@ def main(
     args.scan_rate = scan_rate
     args.fuzz_collections = str(fuzz_collections) if fuzz_collections else None
     args.wordlist = str(fuzz_collections) if fuzz_collections else None
-    args.write_storage = write_storage
-    args.write_storage_file = str(write_storage_file) if write_storage_file else None
-    args.write_firestore = write_firestore
-    args.write_firestore_value = write_firestore_value
-    args.write_rtdb = write_rtdb
-    args.write_rtdb_file = str(write_rtdb_file) if write_rtdb_file else None
+    args.write_storage = write_storage is not None
+    args.write_storage_file = str(write_storage) if write_storage else None
+    args.write_firestore = write_firestore is not None
+    args.write_firestore_value = write_firestore
+    args.write_rtdb = write_rtdb is not None
+    args.write_rtdb_file = str(write_rtdb) if write_rtdb else None
     args.write_all = write_all
     args.processes = processes
     args.scan_project_id = project_id

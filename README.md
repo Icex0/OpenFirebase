@@ -80,8 +80,263 @@ pipx install .
 
 OpenFirebase includes a built-in firestore collection wordlist and example payloads for write testing. These files must be explicitly specified in command line arguments. Feel free to use your own:
 - Use `--fuzz-collections openfirebase/wordlist/firestore-collections.txt` for collection fuzzing
-- Use `--write-rtdb-file openfirebase/payloads/openfirebase.json` for RTDB write testing
-- Use `--write-storage-file openfirebase/payloads/openfirebase_storage_write_check.txt` for storage write testing
+- Use `--write-rtdb openfirebase/payloads/openfirebase.json` for RTDB write testing
+- Use `--write-storage openfirebase/payloads/openfirebase_storage_write_check.txt` for storage write testing
+
+<details>
+<summary><strong>Firestore Collection Wordlist</strong> (<code>openfirebase/wordlist/firestore-collections.txt</code>)</summary>
+
+```
+account
+accounts
+activity
+activities
+address
+addresses
+admin
+admins
+analytics
+app
+app_config
+app_settings
+audit
+auth
+banner
+banners
+billing
+bookmark
+bookmarks
+campaign
+campaigns
+cart
+carts
+category
+categories
+channel
+channels
+chat
+chats
+client
+clients
+comment
+comments
+config
+configs
+contact
+contacts
+conversation
+conversations
+coupon
+coupons
+credentials
+customer
+customers
+data
+db
+delivery
+deliveries
+device
+devices
+discount
+discounts
+docs
+document
+documents
+driver
+drivers
+email
+emails
+event
+events
+favorite
+favorites
+feed
+feeds
+feedback
+file
+files
+follower
+followers
+friend
+friends
+groups
+history
+image
+images
+info
+inventory
+invoice
+invoices
+item
+items
+job
+jobs
+kyc
+lead
+leads
+list
+lists
+location
+locations
+log
+logs
+login
+logins
+media
+member
+members
+merchant
+merchants
+message
+messages
+meta
+metadata
+note
+notes
+notification
+notifications
+offer
+offers
+order
+orders
+organization
+organizations
+password
+passwords
+payment
+payments
+payout
+payouts
+people
+permissions
+person
+photo
+photos
+plan
+plans
+post
+posts
+preferences
+private
+product
+products
+profile
+profiles
+project
+projects
+promo
+promos
+public
+purchase
+purchases
+rating
+ratings
+record
+records
+referral
+referrals
+report
+reports
+request
+requests
+resource
+resources
+review
+reviews
+reward
+rewards
+role
+roles
+room
+rooms
+sale
+sales
+schedule
+schedules
+search
+secret
+secrets
+seller
+sellers
+service
+services
+session
+sessions
+setting
+settings
+shipping
+shop
+shops
+status
+store
+stores
+story
+stories
+subscription
+subscriptions
+support
+survey
+surveys
+tag
+tags
+task
+tasks
+team
+teams
+template
+templates
+thread
+threads
+ticket
+tickets
+token
+tokens
+tracking
+transaction
+transactions
+transfer
+transfers
+trip
+trips
+upload
+uploads
+user
+users
+userdata
+userinfo
+vendor
+vendors
+video
+videos
+visitor
+visitors
+voucher
+vouchers
+wallet
+wallets
+wishlist
+wishlists
+```
+
+</details>
+
+<details>
+<summary><strong>RTDB Write Payload</strong> (<code>openfirebase/payloads/openfirebase.json</code>)</summary>
+
+```json
+{"unauth_access":"OpenFirebase_write_check"}
+```
+
+</details>
+
+<details>
+<summary><strong>Storage Write Payload</strong> (<code>openfirebase/payloads/openfirebase_storage_write_check.txt</code>)</summary>
+
+```
+OpenFirebase - Unauth Firebase write access found
+```
+
+</details>
 
 ## How it works
 
@@ -262,13 +517,10 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 ### Write Testing
 | Argument | Short | Description |
 |----------|-------|-------------|
-| `--write-storage` | `-ws` | Test write access to Firebase storage buckets (requires --write-storage-file) |
-| `--write-storage-file` | | Path to file to upload when testing storage write access (required with --write-storage) |
-| `--write-firestore` | `-wf` | Test write access to Firestore databases (requires --write-firestore-value) |
-| `--write-firestore-value` | | String value to write when testing Firestore write access (required with --write-firestore) |
-| `--write-rtdb` | `-wr` | Test write access to Firebase Realtime Database (requires --write-rtdb-file with JSON data) |
-| `--write-rtdb-file` | | Path to JSON file containing data to write when testing RTDB write access (required with --write-rtdb) |
-| `--write-all` | `-wa` | Test write access to Firebase storage buckets, Firestore databases, and Realtime Database (requires --write-storage-file, --write-rtdb-file, and --write-firestore-value) |
+| `--write-storage <file>` | `-ws` | Test write access to Firebase storage buckets (provide path to file to upload) |
+| `--write-firestore <value>` | `-wf` | Test write access to Firestore databases (provide string value to write) |
+| `--write-rtdb <file>` | `-wr` | Test write access to Firebase Realtime Database (provide path to JSON file with data to write) |
+| `--write-all` | `-wa` | Test write access to Firebase storage, Firestore, and RTDB (requires --write-storage, --write-rtdb, and --write-firestore) |
 
 ### Processing Options
 | Argument | Short | Description |
@@ -320,13 +572,13 @@ openfirebase -d path/to/apks -F
 #### Full unauthenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access
-openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb ./openfirebase/payloads/openfirebase.json --write-firestore "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
 ```
 
 #### Full authenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access with authentication
-openfirebase -d /path/to/apks --read-all --write-all --write-storage-file ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb-file ./openfirebase/payloads/openfirebase.json --write-firestore-value "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb ./openfirebase/payloads/openfirebase.json --write-firestore "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
 ```
 
 #### Resume from extraction only results and perform all read scans
