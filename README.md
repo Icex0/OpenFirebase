@@ -372,6 +372,7 @@ When using the `--read-rtdb` or `--write-rtdb` options, the script will scan all
   - **423**: Database locked/deactivated
 - **Write Testing (`--write-rtdb`)**: Attempts to write JSON data from specified file to test write permissions
 - **Open-only files**: Automatically creates `*_database_open_only.txt` files when public databases are found
+- **Authentication tokens**: Firebase ID tokens are sent as `?auth=<token>` and service account OAuth2 tokens as `?access_token=<token>`. Service account tokens require the `firebase.database` scope, which OpenFirebase requests automatically.
 
 </details>
 
