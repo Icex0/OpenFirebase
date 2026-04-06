@@ -82,6 +82,7 @@ OpenFirebase includes a built-in firestore collection wordlist and example paylo
 - Use `--fuzz-collections openfirebase/wordlist/firestore-collections.txt` for collection fuzzing
 - Use `--write-rtdb openfirebase/payloads/openfirebase.json` for RTDB write testing
 - Use `--write-storage openfirebase/payloads/openfirebase_storage_write_check.txt` for storage write testing
+- Use `--write-firestore "unauth_write_check"` for Firestore write testing (writes to `firestore_unauthenticated_access` collection)
 
 <details>
 <summary><strong>Firestore Collection Wordlist</strong> (<code>openfirebase/wordlist/firestore-collections.txt</code>)</summary>
