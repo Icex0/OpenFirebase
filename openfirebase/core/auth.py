@@ -91,6 +91,8 @@ class FirebaseAuth:
             now = int(time.time())
             scopes = " ".join([
                 "https://www.googleapis.com/auth/firebase",
+                "https://www.googleapis.com/auth/firebase.database",
+                "https://www.googleapis.com/auth/userinfo.email",
                 "https://www.googleapis.com/auth/datastore",
                 "https://www.googleapis.com/auth/devstorage.full_control",
                 "https://www.googleapis.com/auth/cloud-platform",
@@ -296,6 +298,7 @@ class FirebaseAuth:
 
                     if id_token:
                         self._auth_tokens[project_id] = id_token
+                        self._check_email_enumeration(project_id, api_key, email, package_name, cert_sha1)
                         return id_token
                     print(f"{RED}[AUTH]{RESET} No idToken in response for project {project_id}")
                     self._auth_failures[project_id] = "No idToken in response"
@@ -350,6 +353,66 @@ class FirebaseAuth:
             # Try anonymous sign-in
             return self._try_anonymous_signin(project_id, api_key, package_name, cert_sha1)
 
+    def _check_email_enumeration(
+        self,
+        project_id: str,
+        api_key: str,
+        email: str,
+        package_name: Optional[str] = None,
+        cert_sha1: Optional[str] = None
+    ) -> None:
+        """Check whether email enumeration protection is disabled on the project.
+
+        Calls Identity Toolkit's accounts:createAuthUri with the just-authenticated
+        email. If email enumeration protection is disabled, the response will leak
+        whether the account exists via 'registered' and 'signinMethods' fields.
+        With protection enabled, the response is uniform (no such fields).
+
+        See: https://cloud.google.com/identity-platform/docs/admin/email-enumeration-protection
+        """
+        try:
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key={api_key}"
+            payload = {
+                "identifier": email,
+                "continueUri": "http://localhost"
+            }
+
+            headers = {}
+            if package_name:
+                headers["X-Android-Package"] = package_name
+            if cert_sha1:
+                headers["X-Android-Cert"] = cert_sha1
+
+            response = self.session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+
+            if response.status_code != 200:
+                return
+
+            try:
+                data = response.json()
+            except ValueError:
+                return
+
+            # Protection DISABLED leaks 'registered' and/or 'signinMethods'.
+            # Protection ENABLED returns a uniform response without those fields.
+            if "registered" in data or "signinMethods" in data or "allProviders" in data:
+                providers = data.get("signinMethods") or data.get("allProviders") or []
+                registered = data.get("registered")
+                print(
+                    f"{RED}[FINDING]{RESET} Email enumeration protection is DISABLED for project "
+                    f"{project_id} (accounts:createAuthUri leaked registered={registered}, "
+                    f"signinMethods={providers})"
+                )
+
+        except requests.exceptions.RequestException:
+            # Best-effort check; never block auth on this
+            return
+
     def _sign_in_existing_account(
         self,
         project_id: str,
@@ -402,6 +465,7 @@ class FirebaseAuth:
 
                     if id_token:
                         self._auth_tokens[project_id] = id_token
+                        self._check_email_enumeration(project_id, api_key, email, package_name, cert_sha1)
                         return id_token
                     print(f"{RED}[AUTH]{RESET} No idToken in sign-in response for project {project_id}")
                     self._auth_failures[project_id] = "No idToken in sign-in response"

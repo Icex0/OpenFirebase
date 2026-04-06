@@ -336,9 +336,15 @@ class BaseScanner(ABC):
 
         # Determine authentication method based on service type
         if self._is_realtime_database(url):
-            # Realtime Database uses query parameter ?auth=<token>
+            # Realtime Database REST endpoint distinguishes between two token types:
+            #   - Firebase ID tokens (JWTs from Identity Toolkit, e.g. "eyJ...") -> ?auth=<token>
+            #   - Google OAuth2 access tokens (service accounts, "ya29...")      -> ?access_token=<token>
+            # Bearer headers are NOT honored by firebaseio.com.
             separator = "&" if "?" in url else "?"
-            authenticated_url = f"{url}{separator}auth={auth_token}"
+            if auth_token.startswith("ya29."):
+                authenticated_url = f"{url}{separator}access_token={auth_token}"
+            else:
+                authenticated_url = f"{url}{separator}auth={auth_token}"
             # Keep headers as-is for RTDB
         else:
             # Firestore and Storage use Authorization header
