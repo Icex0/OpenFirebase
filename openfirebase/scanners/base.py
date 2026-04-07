@@ -421,6 +421,12 @@ class BaseScanner(ABC):
             else:
                 auth_result["response_content"] = ""
 
+            # Tag storage results with which access system governs the URL
+            # so console/file output can distinguish Firebase Rules vs GCS IAM.
+            surface = self._storage_surface_for_url(url)
+            if surface:
+                auth_result["surface"] = surface
+
             # Store for later display
             self.authenticated_results[url] = auth_result
 
@@ -770,6 +776,11 @@ class BaseScanner(ABC):
             security = result.get("security", "unknown")
             message = result.get("message", "No message")
 
+            # Stamp storage access-system label (Firebase Rules / GCS IAM) on the result
+            surface = self._storage_surface_for_url(url)
+            if surface and isinstance(result, dict):
+                result.setdefault("surface", surface)
+
             # Show the full URL and response details
             print(f"URL: {url}")
             print(f"Status: {status}")
@@ -890,6 +901,20 @@ class BaseScanner(ABC):
         if "firebaseremoteconfig.googleapis.com" in url:
             return "config"
         return "database"
+
+    @staticmethod
+    def _storage_surface_for_url(url: str) -> str:
+        """Which access system governs this storage URL.
+
+        Firebase Storage REST is governed by Firebase Storage Security Rules,
+        while the underlying bucket on storage.googleapis.com is governed by
+        Google Cloud Storage IAM. Returns an empty string for non-storage URLs.
+        """
+        if "firebasestorage.googleapis.com" in url:
+            return "Firebase Rules"
+        if "storage.googleapis.com" in url:
+            return "GCS IAM"
+        return ""
 
     def _count_scan_results(
         self, scan_results: Dict[str, Dict[str, str]], resource_type: str = "database"

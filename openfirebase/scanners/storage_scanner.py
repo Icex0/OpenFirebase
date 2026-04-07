@@ -50,29 +50,9 @@ class StorageScanner(BaseScanner):
         results = {}
 
         for url in self._build_read_urls(project_id):
-            result = self._test_storage_url(url)
-            results[url] = self._tag_surface(url, result)
+            results[url] = self._test_storage_url(url)
 
         return results
-
-    @staticmethod
-    def _surface_for_url(url: str) -> str:
-        """Return the human label for which access system governs this URL.
-
-        - 'Firebase Rules': firebasestorage.googleapis.com (Firebase Storage Security Rules)
-        - 'GCS IAM':        storage.googleapis.com         (Google Cloud Storage IAM)
-        """
-        if "firebasestorage.googleapis.com" in url:
-            return "Firebase Rules"
-        if "storage.googleapis.com" in url:
-            return "GCS IAM"
-        return "Unknown"
-
-    def _tag_surface(self, url: str, result: Dict[str, str]) -> Dict[str, str]:
-        """Attach the access-system label to a result dict in-place."""
-        if isinstance(result, dict):
-            result["surface"] = self._surface_for_url(url)
-        return result
 
     def _test_storage_url(self, url: str) -> Dict[str, str]:
         """Test a specific storage bucket URL and return the result.
@@ -212,8 +192,7 @@ class StorageScanner(BaseScanner):
         file_name = os.path.basename(file_path)
 
         for url in self._build_write_urls(project_id, file_name):
-            result = self._test_storage_write_url(url, file_path)
-            results[url] = self._tag_surface(url, result)
+            results[url] = self._test_storage_write_url(url, file_path)
 
         return results
 
