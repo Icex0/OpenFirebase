@@ -535,6 +535,18 @@ def main(
         help="Android app package name for Remote Config scanning (extracted from APK if not provided)",
         rich_help_panel="Remote Config Credentials"
     ),
+    referer: Optional[str] = Option(
+        None,
+        "--referer",
+        help="Value for the Referer header to bypass HTTP referrer API key restrictions (e.g. https://app.example.com/)",
+        rich_help_panel="Remote Config Credentials"
+    ),
+    ios_bundle_id: Optional[str] = Option(
+        None,
+        "--ios-bundle-id",
+        help="iOS bundle identifier (X-Ios-Bundle-Identifier) to bypass iOS-app API key restrictions",
+        rich_help_panel="Remote Config Credentials"
+    ),
 
     # Proxy configuration
     proxy: Optional[str] = Option(
@@ -654,6 +666,8 @@ def main(
     args.api_key = api_key
     args.cert_sha1 = cert_sha1
     args.package_name = package_name
+    args.referer = referer
+    args.ios_bundle_id = ios_bundle_id
     args.proxy = proxy
     args.check_with_auth = check_with_auth
     args.email = email

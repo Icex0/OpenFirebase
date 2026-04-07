@@ -439,7 +439,7 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 
 - **Account Creation and sign-in**: Automatically attempts to create Firebase user accounts using the Identity Toolkit API with extracted API keys and fetch access token.
 - **Anonymous sign-in**: If account creation with email/password fails, automatically retries with anonymous sign-in.
-- **Android Restriction Bypass**: Uses extracted Android package names and certificate SHA-1 hashes to bypass "restricted to Android app" API limitations
+- **API Key Restriction Bypass**: Bypasses client-side Google API key restrictions by setting the matching headers — `--cert-sha1` + `--package-name` (Android, auto-extracted from APK), `--ios-bundle-id` (iOS), and `--referer` (HTTP referrer). Only IP-address restrictions provide real protection. These bypasses apply to Identity Toolkit (auth) and Remote Config requests, since those are the only Firebase APIs that authenticate via `?key=AIza...` and are therefore subject to API key restrictions.
 - **Multi-Key Testing**: Tests multiple extracted API keys and certificate combinations to find working authentication methods
 - **Authenticated Retry**: Retries previously failed read/write operations using obtained authentication token
 - **Authentication Persistence**: Saves successful authentication data to `auth_data.json` for future `--resume-auth-file` usage
@@ -539,8 +539,10 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 |----------|-------|-------------|
 | `--app-id` | `-i` | Google App ID for Remote Config scanning with --project-id or --project-id-file |
 | `--api-key` | `-k` | Firebase API key for Remote Config scanning with --project-id or --project-id-file |
-| `--cert-sha1` | | Android app certificate SHA-1 hash for Remote Config scanning (extracted from APK if not provided) |
-| `--package-name` | | Android app package name for Remote Config scanning (extracted from APK if not provided) |
+| `--cert-sha1` | | Android app certificate SHA-1 hash to bypass Android-app API key restrictions (extracted from APK if not provided) |
+| `--package-name` | | Android app package name to bypass Android-app API key restrictions (extracted from APK if not provided) |
+| `--referer` | | Value for the `Referer` header to bypass website API key restrictions (e.g. `https://app.example.com/`) |
+| `--ios-bundle-id` | | Value for `X-Ios-Bundle-Identifier` to bypass iOS-app API key restrictions |
 
 ### Authentication
 | Argument | Short | Description |

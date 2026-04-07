@@ -115,11 +115,18 @@ class OpenFirebaseOrchestrator:
                     feature_name = "Authentication or Remote Config scanning"
                 else:
                     feature_name = "Remote Config scanning"
-                    
+
+                missing = []
                 if not args.cert_sha1:
-                    print(f"{YELLOW}[WARNING]{RESET} --cert-sha1 not provided. {feature_name} may fail without Android certificate SHA-1 hash.")
+                    missing.append("--cert-sha1")
                 if not args.package_name:
-                    print(f"{YELLOW}[WARNING]{RESET} --package-name not provided. {feature_name} may fail without Android package name.")
+                    missing.append("--package-name")
+                if missing:
+                    print(
+                        f"{YELLOW}[WARNING]{RESET} {', '.join(missing)} not provided. "
+                        f"{feature_name} may fail if the API key is restricted to an Android app. "
+                        f"For other restriction types use --referer (website) or --ios-bundle-id (iOS app)."
+                    )
 
             # Route to appropriate workflow
             if args.resume:
@@ -279,7 +286,12 @@ class OpenFirebaseOrchestrator:
         firebase_auth = None
         if getattr(args, "check_with_auth", False):
             from ..core.auth import FirebaseAuth
-            firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
+            firebase_auth = FirebaseAuth(
+                timeout=10,
+                proxy=args.proxy,
+                referer=getattr(args, "referer", None),
+                ios_bundle_id=getattr(args, "ios_bundle_id", None),
+            )
             print(f"{BLUE}[INF]{RESET} Authentication enabled - using saved authentication data")
 
             # Set up authentication tokens using saved data
@@ -317,6 +329,8 @@ class OpenFirebaseOrchestrator:
             fuzz_collections_wordlist=args.wordlist,
             proxy=args.proxy,
             firebase_auth=firebase_auth,
+            referer=getattr(args, "referer", None),
+            ios_bundle_id=getattr(args, "ios_bundle_id", None),
         )
 
         return self._perform_project_id_based_scanning(args, scanner, project_ids_set, firebase_auth)
@@ -377,7 +391,12 @@ class OpenFirebaseOrchestrator:
         has_sa = self._has_service_account_auth(args)
         if getattr(args, "check_with_auth", False) or has_sa:
             from ..core.auth import FirebaseAuth
-            firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
+            firebase_auth = FirebaseAuth(
+                timeout=10,
+                proxy=args.proxy,
+                referer=getattr(args, "referer", None),
+                ios_bundle_id=getattr(args, "ios_bundle_id", None),
+            )
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
             if has_sa:
@@ -390,6 +409,8 @@ class OpenFirebaseOrchestrator:
             fuzz_collections_wordlist=args.wordlist,
             proxy=args.proxy,
             firebase_auth=firebase_auth,
+            referer=getattr(args, "referer", None),
+            ios_bundle_id=getattr(args, "ios_bundle_id", None),
         )
 
         return self._perform_project_id_based_scanning(args, scanner, project_ids_set, firebase_auth)
@@ -460,7 +481,12 @@ class OpenFirebaseOrchestrator:
         has_sa = self._has_service_account_auth(args)
         if getattr(args, "check_with_auth", False) or has_sa:
             from ..core.auth import FirebaseAuth
-            firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
+            firebase_auth = FirebaseAuth(
+                timeout=10,
+                proxy=args.proxy,
+                referer=getattr(args, "referer", None),
+                ios_bundle_id=getattr(args, "ios_bundle_id", None),
+            )
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
             if has_sa:
@@ -473,6 +499,8 @@ class OpenFirebaseOrchestrator:
             fuzz_collections_wordlist=args.wordlist,
             proxy=args.proxy,
             firebase_auth=firebase_auth,
+            referer=getattr(args, "referer", None),
+            ios_bundle_id=getattr(args, "ios_bundle_id", None),
         )
 
         return self._perform_project_id_based_scanning(args, scanner, project_ids_set, firebase_auth)
@@ -1044,7 +1072,12 @@ class OpenFirebaseOrchestrator:
         firebase_auth = None
         if needs_auth:
             from ..core.auth import FirebaseAuth
-            firebase_auth = FirebaseAuth(timeout=10, proxy=args.proxy)
+            firebase_auth = FirebaseAuth(
+                timeout=10,
+                proxy=args.proxy,
+                referer=getattr(args, "referer", None),
+                ios_bundle_id=getattr(args, "ios_bundle_id", None),
+            )
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
             if has_sa_auth:
@@ -1056,6 +1089,8 @@ class OpenFirebaseOrchestrator:
             fuzz_collections_wordlist=args.wordlist,
             proxy=args.proxy,
             firebase_auth=firebase_auth,
+            referer=getattr(args, "referer", None),
+            ios_bundle_id=getattr(args, "ios_bundle_id", None),
         )
 
         # Delegate to core scanning method (APK mode)

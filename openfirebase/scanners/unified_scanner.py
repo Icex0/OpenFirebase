@@ -25,6 +25,8 @@ class FirebaseScanner:
         fuzz_collections_wordlist: str = None,
         proxy: str = None,
         firebase_auth=None,
+        referer: str = None,
+        ios_bundle_id: str = None,
     ):
         """Initialize the unified scanner with all sub-scanners.
 
@@ -34,6 +36,10 @@ class FirebaseScanner:
             fuzz_collections_wordlist: Path to wordlist file for collection fuzzing (enables fuzzing if provided)
             proxy: Proxy URL for HTTP requests (format: protocol://host:port)
             firebase_auth: FirebaseAuth instance for authenticated requests
+            referer: Value for the Referer header to bypass HTTP referrer API key restrictions
+                (only applied to Remote Config — RTDB/Firestore/Storage do not check API key restrictions)
+            ios_bundle_id: Value for X-Ios-Bundle-Identifier to bypass iOS-app API key restrictions
+                (only applied to Remote Config — RTDB/Firestore/Storage do not check API key restrictions)
 
         """
         # Store configuration for direct access
@@ -59,8 +65,12 @@ class FirebaseScanner:
         self.firestore_scanner = FirestoreScanner(
             timeout, rate_limit, None, proxy, firebase_auth
         )
+        # Only the Remote Config scanner needs the referer/iOS-bundle bypasses,
+        # because it is the only scanner that authenticates via ?key=AIza... and
+        # therefore the only one whose requests are subject to API key restrictions.
         self.config_scanner = ConfigScanner(
-            timeout, rate_limit, None, proxy
+            timeout, rate_limit, None, proxy,
+            referer=referer, ios_bundle_id=ios_bundle_id,
         )
 
         # Share the loaded wordlist with all sub-scanners

@@ -17,6 +17,29 @@ from .base import BaseScanner
 class ConfigScanner(BaseScanner):
     """Scans Firebase Remote Config to check accessibility and security status."""
 
+    def __init__(
+        self,
+        timeout: int = 10,
+        rate_limit: float = 1.0,
+        fuzz_collections_wordlist: str = None,
+        proxy: str = None,
+        firebase_auth=None,
+        referer: str = None,
+        ios_bundle_id: str = None,
+    ):
+        """Initialize the Remote Config scanner.
+
+        Adds support for HTTP referrer and iOS-bundle API key restriction
+        bypasses, since Remote Config is the only Firebase service this scanner
+        suite hits that authenticates via ?key=AIza... and is therefore subject
+        to API key restrictions.
+        """
+        super().__init__(timeout, rate_limit, fuzz_collections_wordlist, proxy, firebase_auth)
+        if referer:
+            self.session.headers["Referer"] = referer
+        if ios_bundle_id:
+            self.session.headers["X-Ios-Bundle-Identifier"] = ios_bundle_id
+
     def scan_project_id(self, project_id: str, config_data: Dict[str, str],
                        package_names: List[str] = None, output_file: str = None) -> Dict[str, str]:
         """Scan a Firebase project ID for Remote Config accessibility.

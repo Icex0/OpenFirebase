@@ -18,12 +18,20 @@ from .config import BLUE, GREEN, RED, RESET, YELLOW
 class FirebaseAuth:
     """Handles Firebase authentication via Identity Toolkit API."""
 
-    def __init__(self, timeout: int = 10, proxy: str = None):
+    def __init__(
+        self,
+        timeout: int = 10,
+        proxy: str = None,
+        referer: str = None,
+        ios_bundle_id: str = None,
+    ):
         """Initialize Firebase authentication handler.
 
         Args:
             timeout: Request timeout in seconds
             proxy: Proxy URL for HTTP requests
+            referer: Value for the Referer header to bypass HTTP referrer API key restrictions
+            ios_bundle_id: Value for X-Ios-Bundle-Identifier to bypass iOS-app API key restrictions
 
         """
         self.timeout = timeout
@@ -32,6 +40,11 @@ class FirebaseAuth:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Content-Type": "application/json"
         })
+        # API key restriction bypass headers (session defaults; per-call code can override)
+        if referer:
+            self.session.headers["Referer"] = referer
+        if ios_bundle_id:
+            self.session.headers["X-Ios-Bundle-Identifier"] = ios_bundle_id
 
         # Configure proxy if provided
         if proxy:
