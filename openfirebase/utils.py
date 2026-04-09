@@ -313,7 +313,12 @@ def get_apk_package_name(apk_path: Path) -> Optional[str]:
         # Try using androguard APK.get_package() first
         from androguard.core.apk import APK
         apk = APK(apk_path)
-        return apk.get_package()
+        # androguard can return None or "" on manifests with no/empty
+        # package attribute — fall back to the filename stem so each
+        # APK still has a unique identifier (otherwise multiple APKs
+        # collide on the same falsy key in the results dict and
+        # overwrite each other).
+        return apk.get_package() or apk_path.stem
     except Exception:
         # If androguard fails, fall back to APK filename
         return apk_path.stem

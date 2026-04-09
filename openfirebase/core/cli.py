@@ -470,7 +470,7 @@ def main(
     processes: Optional[int] = Option(
         None,
         "-j", "--processes",
-        help="Number of processes for concurrent APK processing (default: min(5, CPU count), max: 5)",
+        help="Number of processes for concurrent file processing (default: min(8, CPU count - 1), max: 20)",
         min=1,
         max=20,
         rich_help_panel="Processing Options"

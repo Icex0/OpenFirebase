@@ -138,8 +138,10 @@ class OpenFirebaseOrchestrator:
     def _get_process_count(self, processes_arg):
         """Determine the number of processes to use."""
         if processes_arg is None:
-            return min(5, multiprocessing.cpu_count())
-        return min(5, max(1, processes_arg))
+            # Scale with the machine but leave one core free for the
+            # OS / UI and cap at 8
+            return max(1, min(8, multiprocessing.cpu_count() - 1))
+        return max(1, processes_arg)
 
     def _handle_resume_mode(self, args, file_handler):
         """Handle --resume mode (resume from existing results file)."""

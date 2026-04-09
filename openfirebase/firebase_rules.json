@@ -7,13 +7,13 @@
       "capture_group": 1
     },
     "Google_API_Key": {
-      "pattern": "<string name=\"google_api_key\">([A-Za-z0-9_-]+)</string>",
-      "description": "Google API key from strings.xml",
+      "pattern": "<string name=\"google_api_key\">(AIza[A-Za-z0-9_-]{35})</string>",
+      "description": "Google API key from strings.xml (AIza + 35 chars = 39 total)",
       "capture_group": 1
     },
     "Other_Google_API_Key": {
-      "pattern": "<string name=\"[^\"]*\">(AIza[A-Za-z0-9_-]+)</string>",
-      "description": "Other Google API keys starting with AIza from strings.xml",
+      "pattern": "<string name=\"[^\"]*\">(AIza[A-Za-z0-9_-]{35})</string>",
+      "description": "Other Google API keys starting with AIza from strings.xml (AIza + 35 chars = 39 total)",
       "capture_group": 1
     },
     "Google_App_ID": {

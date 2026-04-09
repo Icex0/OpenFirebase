@@ -15,9 +15,13 @@
 
 Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
 
-Supports multiple inputs including Android APK extraction (DEX string pool + resources), iOS IPA extraction via `GoogleService-Info.plist` and Mach-O string scanning, and single or multiple project IDs.
+Supports multiple inputs including Android APK extraction (DEX string pool + resources), iOS IPA extraction via GoogleService-Info.plist and Mach-O string scanning, and single or multiple project IDs. This means you can also use this tool if you find Firebase data in web applications.
 
-[>> See my blog for more information: https://ice0.blog/docs/openfirebase <<](https://ice0.blog/docs/openfirebase)
+> [>> See my blog for more information: https://ice0.blog/docs/openfirebase <<](https://ice0.blog/docs/openfirebase)
+
+**See also:**
+- [FireSA](https://github.com/Icex0/FireSA) — Service account exploitation tool for quickly demonstrating impact with a leaked private key.
+- [Firebase Pentest Checklist](https://github.com/Icex0/firebase-pentest-checklist) — Complete Firebase pentesting checklist, including the OpenFirebase commands. Most of it can be done with this tool.
 
 </div>
 
@@ -366,11 +370,10 @@ OpenFirebase supports iOS `.ipa` bundles alongside Android APKs. Pass an `.ipa` 
 
 - **Plist parsing.** Any file matching `GoogleService-Info*.plist` anywhere inside the app bundle is parsed. iOS keys (`API_KEY`, `PROJECT_ID`, `DATABASE_URL`, `STORAGE_BUCKET`, `GOOGLE_APP_ID`, `BUNDLE_ID`, ...) are mapped to canonical names so the same Firebase regex patterns match unchanged. Fully bespoke filenames (e.g. `GSI-Production.plist`) are not detected.
 - **Service account JSON detection.** Every `.json` inside `Payload/<App>.app/` is parsed and kept if it contains `"type": "service_account"` with a valid `client_email` and `private_key`.
-- **Mach-O binary string scanning.** The main app executable is scanned for printable ASCII strings, which are then run through the same `firebase_rules.json` regex patterns used by the plist/APK paths — catching `AIza...` API keys, `*.firebaseio.com` URLs, and storage buckets hardcoded as string literals.
+- **Mach-O binary string scanning.** The main app executable is scanned for printable ASCII strings, which are then run through the same `firebase_rules.json` regex patterns used by the plist/APK paths — catching API keys, project IDs, App IDs, database URLs, storage buckets, Firestore collection names, and any other pattern defined in the rules file.
 - **Hardcoded PEM private key recovery.** Full `-----BEGIN PRIVATE KEY-----` blocks are extracted from the binary and surfaced as a `Hardcoded_Private_Key` finding. These are reported standalone for manual investigation (the matching `client_email` cannot be recovered from the binary alone).
 - **Bundle identifier.** `CFBundleIdentifier` is read from `Info.plist` and emitted as `IPA_Bundle_ID`. It's used by `--ios-bundle-id` to bypass iOS API key restrictions on Identity Toolkit and Remote Config requests.
 - **No Firestore collection detection on iOS.** Unlike Android's DEX walk, the Mach-O does not preserve the call-site association between `collectionWithPath:` and its string argument, so collection names aren't labeled automatically.
-```
 
 </details>
 
