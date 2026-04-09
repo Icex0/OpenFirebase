@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfirebase"
-version = "1.1.0"
+version = "1.2.0"
 description = "Automated Firebase security scanner to scan realtime and firestore databases, storage buckets and remote configs for unauth read and write access Resources"
 readme = "README.md"
 license = {text = "MIT"}

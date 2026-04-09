@@ -13,9 +13,9 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)](https://www.python.org)
 [![GitHub issues](https://img.shields.io/github/issues/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/issues)
 
-Automated Firebase security scanner that extracts Firebase configurations from APK files and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
+Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
 
-Supports multiple inputs including APK extraction via JADX decompilation, fast extract, single or multiple project IDs.
+Supports multiple inputs including Android APK extraction (DEX string pool + resources), iOS IPA extraction via `GoogleService-Info.plist` and Mach-O string scanning, and single or multiple project IDs.
 
 [>> See my blog for more information: https://ice0.blog/docs/openfirebase <<](https://ice0.blog/docs/openfirebase)
 
@@ -25,12 +25,12 @@ Supports multiple inputs including APK extraction via JADX decompilation, fast e
 ## Requirements
 
 - Python 3.8+
-- Java 11+ (required for JADX decompilation and apksigner tool)
+- Java 11+ (required for the apksigner tool)
 
 ## Installation
 
 ### Step 1: Install Java
-Java is required for JADX decompilation (default mode) and apksigner.
+Java is required for apksigner (used to extract APK signing certificates).
 
 #### macOS
 ```bash
@@ -342,16 +342,35 @@ OpenFirebase - Unauth Firebase write access found
 ## How it works
 
 <details>
-<summary><strong>JADX Decompilation (Default)</strong></summary>
+<summary><strong>Android APK Extraction (DEX string pool + resources)</strong></summary>
 
-OpenFirebase uses JADX decompilation by default for source code analysis. This *Decompiling APK with JADX* phase can take a while, depending on the APK and your system (especially on VMs with limited resources):
+OpenFirebase extracts Firebase items from Android APKs *without* spawning JADX. The path combines four sources into a single regex pass:
 
-- **Automatic Installation**: If JADX is not found, OpenFirebase will automatically download and install JADX.
-- **Fast Alternative**: Use `--fast-extract` to skip JADX decompilation and extract string resources from all `/res/values-*` directories (including locale-specific variants)
+1. **`resources.arsc` strings** — every value in `strings.xml` across all `/res/values-*` locales (read via androguard, no decompile).
+2. **DEX string pool** — every literal in every `classes*.dex`, pulled directly from the `string_ids` table via `androguard.core.dex.DEX.get_strings()`. This is where Java/Kotlin string literals live: Firebase URLs, `AIza...` API keys, Firestore collection names, `gserviceaccount.com` emails, and full `-----BEGIN PRIVATE KEY-----` blocks pasted into source.
+3. **DEX bytecode walk** — `invoke-*` opcodes targeting `FirebaseFirestore.collection(...)` / `CollectionReference.document(...)` are paired with the most recent `const-string` in the same method to recover Firestore collection names that the bare string-pool walk can't label (the call site and the literal live in separate DEX tables).
+4. **`assets/` and `res/raw/` text files** — `*.json`, `*.xml`, `*.txt`, `*.properties`, `*.cfg`, `*.conf`, `*.js`, `*.html` are read straight from the zip and fed through the same regex pipeline. Catches Firebase config blobs that ship as resource files (including Capacitor/Cordova hybrid apps that embed config in `assets/public/*.js`).
 
-- **Why use JADX?**: JADX decompilation provides deeper analysis by searching through actual source code, detecting Firestore collections, and finding additional Firebase patterns that strings.xml-only analysis would miss
-- JADX processing has a 30 minute timeout to prevent hanging (change in config.py). Note: In some cases the JADX process is not killed after 30 minutes and the extraction phase will not complete. Manually kill the correct JADX process that hangs and it will finish the extraction phase (I will fix this!) 
-- Files are processed in order of size (smallest first) so it will take more time towards the end
+**Hardcoded service-account recovery.** PEM private-key blocks found in the DEX pool are paired with a `gserviceaccount.com` email if both appear exactly once in the same DEX file (otherwise the PEM is emitted as a standalone `Hardcoded_Private_Key` finding). Service-account JSON files bundled in `assets/` or `res/raw/` are still parsed independently with the existing walker.
+
+**Known limitations.** Strings encrypted by DexGuard / Allatori / paid R8 plugins, runtime-built strings via `StringBuilder` / `String.format`, and strings embedded in native `lib/*.so` libraries are not recovered.
+
+Files are processed in order of size (smallest first).
+
+</details>
+
+<details>
+<summary><strong>iOS IPA Extraction</strong></summary>
+
+OpenFirebase supports iOS `.ipa` bundles alongside Android APKs. Pass an `.ipa` to `-f` or mix `.apk` and `.ipa` files in a `-d` directory — extraction is dispatched per file based on extension.
+
+- **Plist parsing.** Any file matching `GoogleService-Info*.plist` anywhere inside the app bundle is parsed. iOS keys (`API_KEY`, `PROJECT_ID`, `DATABASE_URL`, `STORAGE_BUCKET`, `GOOGLE_APP_ID`, `BUNDLE_ID`, ...) are mapped to canonical names so the same Firebase regex patterns match unchanged. Fully bespoke filenames (e.g. `GSI-Production.plist`) are not detected.
+- **Service account JSON detection.** Every `.json` inside `Payload/<App>.app/` is parsed and kept if it contains `"type": "service_account"` with a valid `client_email` and `private_key`.
+- **Mach-O binary string scanning.** The main app executable is scanned for printable ASCII strings, which are then run through the same `firebase_rules.json` regex patterns used by the plist/APK paths — catching `AIza...` API keys, `*.firebaseio.com` URLs, and storage buckets hardcoded as string literals.
+- **Hardcoded PEM private key recovery.** Full `-----BEGIN PRIVATE KEY-----` blocks are extracted from the binary and surfaced as a `Hardcoded_Private_Key` finding. These are reported standalone for manual investigation (the matching `client_email` cannot be recovered from the binary alone).
+- **Bundle identifier.** `CFBundleIdentifier` is read from `Info.plist` and emitted as `IPA_Bundle_ID`. It's used by `--ios-bundle-id` to bypass iOS API key restrictions on Identity Toolkit and Remote Config requests.
+- **No Firestore collection detection on iOS.** Unlike Android's DEX walk, the Mach-O does not preserve the call-site association between `collectionWithPath:` and its string argument, so collection names aren't labeled automatically.
+```
 
 </details>
 
@@ -402,7 +421,7 @@ When using the `--read-storage` or `--write-storage` options, the script will sc
 
 When using the `--read-firestore` or `--write-firestore` options, the script will scan Firestore (default) databases to check accessibility:
 
-- **Extracted Collections**: Uses Firestore collection found during JADX decompilation from each APK's source code
+- **Extracted Collections**: Uses Firestore collection names recovered from each APK's DEX bytecode walk
 - **Collection Fuzzing**: When `--fuzz-collections` is used with a wordlist path and a public Firestore database is found, automatically fuzzes common collection names: `users`, `posts`, `messages`, `products`, `orders` etc
 - Uses Firestore REST API endpoint:
   - `https://firestore.googleapis.com/v1/projects/PROJECT_ID/databases/(default)/documents/COLLECTION_NAME`
@@ -452,8 +471,8 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 OpenFirebase detects Firebase service account credentials (`client_email` + `private_key`) accidentally embedded in APK files. Service accounts with admin-level roles (e.g. `firebase-adminsdk`) bypass all Firebase security rules, granting unrestricted access.
 
 #### Detection
-- **JADX decompilation**: Parses JSON files containing `"type": "service_account"` with `client_email` and `private_key` fields. Also scans Java/Kotlin source for hardcoded PEM private keys and `@*.gserviceaccount.com` emails
-- **Fast extraction**: Reads `assets/`, `res/raw/`, and root-level JSON files directly from the APK for service account JSON files
+- **JSON service account files**: Reads `assets/`, `res/raw/`, and root-level JSON files directly from the APK and parses any containing `"type": "service_account"` with `client_email` and `private_key` fields
+- **Hardcoded PEM keys**: Scans the DEX string pool for `-----BEGIN PRIVATE KEY-----` blocks and `@*.gserviceaccount.com` emails, pairing them when both appear exactly once in the same DEX file
 
 #### Authentication Flow
 When credentials are found (or manually provided via `--service-account` and `--private-key`), OpenFirebase authenticates using the Google OAuth2 service-to-service JWT flow:
@@ -475,7 +494,7 @@ An admin-level service account doesn't just bypass security rules for read/write
 <details>
 <summary><strong>Resume from Previous Results</strong></summary>
 
-When you have already run extraction and want to skip the extraction phase (JADX decompilation) entirely, you can use:
+When you have already run extraction and want to skip the extraction phase entirely, you can use:
 
 - `--resume`: Resume from an existing results directory containing a `*_firebase_items.txt` file and go directly to scanning
 - `--resume-auth-file`: Resume using previously saved authentication data from `auth_data.json` file in the results directory, skipping the trial-and-error authentication process
@@ -497,9 +516,8 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 ### Input Options
 | Argument | Short | Description |
 |----------|-------|-------------|
-| `--file` | `-f` | Single APK file to process with JADX decompilation |
-| `--apk-dir` | `-d` | JADX decompilation on directory containing APK files (*.apk) |
-| `--fast-extract` | `-F` | Use fast extraction (strings.xml from all /res/values-* directories) instead of full source analysis. Faster but limited |
+| `--file` | `-f` | Single mobile bundle to process: `.apk` (Android: DEX string pool + resources) or `.ipa` (iOS: plist + Mach-O strings). |
+| `--apk-dir` | `-d` | Directory containing mobile bundles (`*.apk` and/or `*.ipa`) |
 | `--resume` | `-r` | Resume from existing results folder containing *_firebase_items.txt file |
 | `--exclude-project-id` | | Exclude specific project ID(s) when resuming (comma-separated for multiple IDs, can only be used with --resume) |
 | `--project-id` | `-pi` | Scan specific Firebase project ID(s) without extraction (comma-separated for multiple IDs) |
@@ -532,7 +550,6 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--output-dir` | `-o` | Output directory for all generated files (default: results/) |
 | `--processes` | `-j` | Number of processes for concurrent APK processing (default: min(5, CPU count), max: 5) |
 | `--proxy` | `-x` | Proxy for HTTP requests (format: protocol://host:port, e.g., http://127.0.0.1:8080) |
-| `--timeout` | `-t` | Timeout for JADX decompilation in minutes (default: 30 minutes) |
 
 ### Remote Config Credentials
 | Argument | Short | Description |
@@ -565,14 +582,12 @@ I recommend scanning using --proxy http://127.0.0.1:8080 and Burp Suite with the
 
 #### Only extract single file
 ```bash
-# Only extract using JADX (default)
 openfirebase -f file.apk
 ```
 
-#### Only extract APKs using fast extract 
+#### Only extract a directory of APKs/IPAs
 ```bash
-# Extract using APK directory with fast mode
-openfirebase -d path/to/apks -F
+openfirebase -d path/to/apks
 ```
 
 #### Full unauthenticated read and write scan

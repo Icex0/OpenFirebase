@@ -1,7 +1,7 @@
 """OpenFirebase - Extract Firebase items from APK files."""
 
 # Import from new modular structure
-from .extractors import FirebaseExtractor, JADXExtractor, ProjectIDExtractor
+from .extractors import FirebaseExtractor, ProjectIDExtractor
 from .handlers import FileHandler
 from .main import main
 from .parsers import ResultsParser
@@ -12,7 +12,6 @@ __all__ = [
     "FileHandler",
     "FirebaseExtractor",
     "FirebaseScanner",
-    "JADXExtractor",
     "ProjectIDExtractor",
     "ResultsParser",
     "main",

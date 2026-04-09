@@ -175,25 +175,6 @@ class FirebaseAuth:
             self._auth_failures[project_id] = f"SA auth error: {e}"
             return None
 
-    def get_sa_token(self, project_id: str) -> Optional[str]:
-        """Get service account access token for a project.
-
-        Returns:
-            Access token if available and not expired, None otherwise
-
-        """
-        if project_id in self._sa_tokens:
-            token, expiry = self._sa_tokens[project_id]
-            if time.time() < expiry - 60:
-                return token
-            # Token expired, try to refresh
-            creds = self._sa_credentials.get(project_id)
-            if creds:
-                return self.authenticate_with_service_account(
-                    project_id, creds["client_email"], creds["private_key"]
-                )
-        return None
-
     def test_sa_project_access(self, project_id: str, access_token: str, session=None) -> bool:
         """Test if SA token has any permissions on a project via testIamPermissions.
 

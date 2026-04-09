@@ -4,7 +4,7 @@ Centralized configuration for all constants and settings.
 """
 
 # Version information
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # ANSI color codes - Using 256-color mode for consistency across terminals
 GREEN = "\033[38;5;46m"  # Bright green for success
@@ -32,16 +32,9 @@ STATUS_PRECONDITION_FAILED = "412"
 STATUS_LOCKED = "423"
 STATUS_TOO_MANY_REQUESTS = "429"
 
-# JADX Configuration
-JADX_VERSION = "1.5.2" # 1.5.5 is much slower
-JADX_DOWNLOAD_URL = f"https://github.com/skylot/jadx/releases/download/v{JADX_VERSION}/jadx-{JADX_VERSION}.zip"
-
 # Android Build Tools Configuration
 ANDROID_BUILD_TOOLS_URL = "https://dl.google.com/android/repository/build-tools_r33.0.2-windows.zip"
 ANDROID_BUILD_TOOLS_FOLDER = "android-13"
-
-# JADX Processing Configuration
-DEFAULT_TIMEOUT_SECONDS = 1800 # Wait 30 minutes for JADX before falling back to fast extraction
 
 # File Configuration
 DEFAULT_CONFIG_PATH = "firebase_rules.json"
@@ -61,6 +54,20 @@ FILTERED_DOMAINS = [
     "test.firebaseio.com",
     "demo.firebaseio.com",
     "chrome-devtools-frontend",
+]
+
+# Known test/demo private keys shipped inside third-party library jars.
+# Matched by a unique substring of the base64 body so the check is
+# version-stable (the actual key bytes never change for test fixtures).
+#
+# Sources:
+#   - google-api-client-java TestCertificates.CA_KEY
+#   - google-api-client-java TestCertificates.FOO_BAR_COM_KEY
+#   - Netty BogusKeyManagerFactory PROBING_KEY (self-signed example.com test cert)
+FILTERED_PRIVATE_KEY_SUBSTRINGS = [
+    "QDN5Q1zhtJYeE5N",   # google-api-client TestCertificates.CA_KEY
+    "QCzFVKJOkqTmyyj",   # google-api-client TestCertificates.FOO_BAR_COM_KEY
+    "CCBtayYNDrM3NFnk",  # Netty BogusKeyManagerFactory PROBING_KEY
 ]
 
 # Filtered collection values to exclude from extraction

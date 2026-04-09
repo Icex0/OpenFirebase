@@ -136,7 +136,7 @@ def _kill_java_processes_windows():
         powershell_cmd = [
             "powershell", "-Command",
             "Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'java.exe'} | "
-            "Where-Object {$_.CommandLine -like '*jadx*' -or $_.CommandLine -like '*apksigner*'} | "
+            "Where-Object {$_.CommandLine -like '*apksigner*'} | "
             "Select-Object ProcessId | ForEach-Object {$_.ProcessId}"
         ]
         
@@ -166,7 +166,7 @@ def _kill_java_processes_unix():
         
         if result.returncode == 0:
             for line in result.stdout.split('\n'):
-                if 'java' in line and ('jadx' in line.lower() or 'apksigner' in line.lower()):
+                if 'java' in line and 'apksigner' in line.lower():
                     parts = line.split()
                     if len(parts) >= 2:
                         try:
@@ -292,14 +292,23 @@ def get_current_datetime() -> str:
 
 
 def get_apk_package_name(apk_path: Path) -> Optional[str]:
-    """Extract package name from APK file.
-    
+    """Extract the package / bundle identifier from an .apk or .ipa.
+
     Args:
-        apk_path: Path to the APK file
-        
+        apk_path: Path to the bundle file
+
     Returns:
-        Package name if extraction succeeds, None otherwise
+        Android package name or iOS CFBundleIdentifier; falls back to
+        the filename stem if extraction fails.
     """
+    if apk_path.suffix.lower() == ".ipa":
+        # Lazy-import so non-iOS callers don't pay for it.
+        from .extractors.ipa_extractor import IpaExtractor
+        try:
+            bundle_id = IpaExtractor.extract_bundle_id(apk_path)
+            return bundle_id if bundle_id else apk_path.stem
+        except Exception:
+            return apk_path.stem
     try:
         # Try using androguard APK.get_package() first
         from androguard.core.apk import APK
@@ -322,7 +331,7 @@ def format_firebase_items_status(
     Args:
         package_name: Name of the APK package
         firebase_items: List of (header, value) tuples
-        extraction_type: "Fast" or "JADX"
+        extraction_type: extraction label, e.g. "Fast"
 
     Returns:
         Formatted status message string with ANSI color codes
@@ -616,37 +625,40 @@ def validate_project_ids(project_ids_input):
 
 
 def get_apk_files(input_folder: Path) -> List[Path]:
-    """Get all APK files from the input folder.
-    
+    """Get all mobile bundle files (.apk and .ipa) from the input folder.
+
+    The function name is preserved for call-site compatibility, but
+    iOS .ipa bundles are now returned alongside Android .apk files.
+
     Args:
-        input_folder: Path to folder containing APK files
-        
+        input_folder: Path to folder containing mobile bundles
+
     Returns:
-        List of APK file paths sorted by size (smallest first)
+        List of bundle paths sorted by size (smallest first)
     """
-    
+
     if not input_folder.exists():
         raise FileNotFoundError(f"Folder not found: {input_folder}")
 
-    # Find all APK files
-    apk_files = list(input_folder.glob("*.apk"))
+    # Find all APK and IPA files
+    bundle_files = list(input_folder.glob("*.apk")) + list(input_folder.glob("*.ipa"))
 
-    if not apk_files:
-        # Check if the user provided a single APK file instead of a directory
+    if not bundle_files:
+        # Check if the user provided a single bundle file instead of a directory
         if (
             input_folder.is_file()
-            and input_folder.suffix.lower() == ".apk"
+            and input_folder.suffix.lower() in (".apk", ".ipa")
         ):
-            print(f"{RED}[ERROR]{RESET} '{input_folder}' is a single APK file.")
-            print(f"{RED}[ERROR]{RESET} Use -f/--file for single APK files, or -d/--apk-dir for directories containing APK files.")
+            print(f"{RED}[ERROR]{RESET} '{input_folder}' is a single bundle file.")
+            print(f"{RED}[ERROR]{RESET} Use -f/--file for single .apk/.ipa files, or -d/--apk-dir for directories containing them.")
         else:
-            print(f"{RED}[ERROR]{RESET} No APK files found in {input_folder}")
+            print(f"{RED}[ERROR]{RESET} No .apk or .ipa files found in {input_folder}")
         return []
 
     # Sort files by size (smallest first, largest last)
-    apk_files.sort(key=lambda x: x.stat().st_size)
+    bundle_files.sort(key=lambda x: x.stat().st_size)
 
-    return apk_files
+    return bundle_files
 
 
 def cleanup_executor():

@@ -43,7 +43,7 @@ def parse_package_names(file_path):
 
     try:
         with open(file_path, encoding="utf-8", errors="ignore") as file:
-            for line_num, line in enumerate(file, 1):
+            for line in file:
                 matches = re.findall(pattern, line)
                 for match in matches:
                     # Clean up the package name (remove any trailing/leading whitespace)

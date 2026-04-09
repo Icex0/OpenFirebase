@@ -32,32 +32,32 @@
       "capture_group": 1
     },
     "Firebase_Database_US": {
-      "pattern": "([a-z0-9][a-z0-9-]*[a-z0-9])\\.firebaseio\\.com/?[^\\s\"'<>]*",
+      "pattern": "([a-z0-9][a-z0-9-]{0,38}[a-z0-9])\\.firebaseio\\.com/?[^\\s\"'<>]*",
       "description": "Firebase Realtime Database URLs (US region) - captures project ID",
       "capture_group": 0
     },
     "Firebase_Database_Other": {
-      "pattern": "([a-z0-9-]+)\\.[a-z0-9-]+\\.firebasedatabase\\.app/?[^\\s\"'<>]*",
+      "pattern": "([a-z0-9][a-z0-9-]{0,38}[a-z0-9])\\.[a-z0-9][a-z0-9-]{0,38}\\.firebasedatabase\\.app/?[^\\s\"'<>]*",
       "description": "Firebase Realtime Database URLs (other regions) - captures project ID",
       "capture_group": 0
     },
     "Firebase_Storage_New": {
-      "pattern": "([a-z0-9-]+)\\.firebasestorage\\.app/?[^\\s\"'<>]*",
+      "pattern": "([a-z0-9][a-z0-9-]{0,38}[a-z0-9])\\.firebasestorage\\.app/?[^\\s\"'<>]*",
       "description": "Firebase Storage URLs (new domain) - captures project ID",
       "capture_group": 0
     },
     "Firebase_Storage_Old": {
-      "pattern": "([a-z0-9]+(?:-[a-z0-9]+)*)(?:\\.[a-z0-9-]+)?(?:\\.r)?\\.appspot\\.com",
+      "pattern": "([a-z0-9][a-z0-9-]{0,38})(?:\\.[a-z0-9-]{1,8})?(?:\\.r)?\\.appspot\\.com",
       "description": "Firebase Storage URLs (old appspot domain) - captures project ID",
       "capture_group": 0
     },
     "Firebase_Storage_API": {
-      "pattern": "firebasestorage\\.googleapis\\.com/v0/b/([a-z0-9-]+)\\.appspot\\.com/?[^\\s\"'<>]*",
+      "pattern": "firebasestorage\\.googleapis\\.com/v0/b/([a-z0-9][a-z0-9-]{0,38})\\.appspot\\.com/?[^\\s\"'<>]*",
       "description": "Firebase Storage bucket API - captures project ID",
       "capture_group": 0
     },
     "Firestore_Collection_Name": {
-      "pattern": "\\w*collection\\(\\s*[\"'`]([^\\n\\r\"'`]+?)[\"'`]",
+      "pattern": "\\w{0,30}collection\\(\\s*[\"'`]([^\\n\\r\"'`]{1,200}?)[\"'`]",
       "description": "Firestore collection names from Java code",
       "capture_group": 1
     }

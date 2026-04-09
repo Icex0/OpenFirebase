@@ -6,7 +6,7 @@ This module handles all file I/O operations for the OpenFirebase tool.
 import re
 from typing import Dict, List, Set, Tuple
 
-from ..core.config import BLUE, FILTERED_COLLECTION_VALUES, GREEN, RED, RESET, YELLOW
+from ..core.config import BLUE, FILTERED_COLLECTION_VALUES, RESET
 from ..parsers.pattern_loader import get_invalid_collection_prefixes
 
 class FileHandler:
@@ -57,7 +57,7 @@ class FileHandler:
                 # Group links by header type (strip source labels for grouping)
                 grouped_links = {}
                 for header, value in links:
-                    # Extract base header by removing source labels like "(JADX)" or "(Fast)"
+                    # Extract base header by removing source labels like "(Fast)"
                     base_header = re.sub(r"\s*\([^)]+\)$", "", header)
 
                     # Filter out invalid collection names for collection headers
@@ -110,11 +110,7 @@ class FileHandler:
 
         for package_name, links in results.items():
             # Determine extraction type from first item
-            extraction_type = "JADX"  # Default
-            if links:
-                first_header = links[0][0]
-                if "(Fast)" in first_header:
-                    extraction_type = "Fast"
+            extraction_type = "Fast"
 
             print(format_firebase_items_status(package_name, links, extraction_type))
 

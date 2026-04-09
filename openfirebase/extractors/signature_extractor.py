@@ -108,7 +108,7 @@ class SignatureExtractor:
             sha1_hashes = []
             result = subprocess.run([
                 "java", "-jar", str(apksigner_path), "verify", "--print-certs", str(apk_path)
-            ], check=False, capture_output=True, text=True, timeout=30)
+            ], check=False, capture_output=True, text=True, timeout=180)
 
             if result.returncode == 0:
                 # Parse the output to extract all SHA-1 hashes from regular Signer sections only (not Source Stamp Signer)

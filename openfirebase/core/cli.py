@@ -13,7 +13,7 @@ from .config import DEFAULT_OUTPUT_DIR
 
 # Create the main Typer app
 app = typer.Typer(
-    help="Extract Firebase items from APK files using JADX decompilation (default) or fast strings.xml parsing",
+    help="Extract Firebase items from Android APKs (DEX string pool + resources) and iOS IPAs (GoogleService-Info.plist + Mach-O strings)",
     no_args_is_help=True,
     rich_markup_mode="markdown",
     context_settings={"help_option_names": ["-h", "--help"]}
@@ -314,14 +314,6 @@ def validate_service_account_options(
     return None
 
 
-def validate_resume_fast_extract(resume: Optional[Path], fast_extract: bool) -> None:
-    """Validate resume and fast extract compatibility."""
-    if resume and fast_extract:
-        raise typer.BadParameter(
-                "--resume cannot be used with --fast-extract (extraction is skipped)"
-            )
-
-
 def validate_exclude_project_id(
     exclude_project_id: Optional[str],
     resume: Optional[Path]
@@ -367,19 +359,13 @@ def main(
     file: Optional[str] = Option(
         None,
         "-f", "--file",
-        help="Single APK file to process with JADX decompilation",
+        help="Single mobile bundle to process: .apk (Android: DEX string pool + resources) or .ipa (iOS: plist + Mach-O strings).",
         rich_help_panel="Input Options"
     ),
     apk_dir: Optional[str] = Option(
         None,
         "-d", "--apk-dir",
-        help="JADX decompilation on directory containing APK files (*.apk)",
-        rich_help_panel="Input Options"
-    ),
-    fast_extract: bool = Option(
-        False,
-        "-F", "--fast-extract",
-        help="Use fast extraction (strings.xml from all /res/values-* directories) instead of full source analysis. Faster but limited.",
+        help="Directory containing mobile bundles (*.apk and/or *.ipa). APKs scan the DEX string pool + assets/res-raw resources; IPAs scan plist + Mach-O strings.",
         rich_help_panel="Input Options"
     ),
     resume: Optional[Path] = Option(
@@ -555,15 +541,6 @@ def main(
         help="Proxy for HTTP requests (format: protocol://host:port, e.g., http://127.0.0.1:8080)",
         rich_help_panel="Processing Options"
     ),
-    
-    # Timeout configuration
-    timeout: Optional[int] = Option(
-        None,
-        "-t", "--timeout",
-        help="Timeout for JADX decompilation in minutes (default: 30 minutes)",
-        min=1,
-        rich_help_panel="Processing Options"
-    ),
 
     # Authentication options
     check_with_auth: bool = Option(
@@ -594,26 +571,25 @@ def main(
     # Service Account Authentication
     service_account: Optional[str] = Option(
         None,
-        "--service-account",
+        "--service-account", "-sa",
         help="Service account email (client_email) for admin-level authentication via Google OAuth2 JWT flow (bypasses security rules)",
         rich_help_panel="Service Account Authentication"
     ),
     private_key: Optional[str] = Option(
         None,
-        "--private-key",
+        "--private-key", "-pk",
         help="Path to PEM private key file for service account authentication (required with --service-account)",
         rich_help_panel="Service Account Authentication"
     )
 ):
-    """Extract Firebase items from APK files and scan for unauthorized access.
-    
-    This tool can extract Firebase configuration from Android APK files using either
-    JADX decompilation (default) or fast strings.xml parsing, then scan the discovered
+    """Extract Firebase items from APK/IPA files and scan for unauthorized access.
+
+    Extracts Firebase configuration from Android APKs (DEX string pool + resources)
+    and iOS IPAs (GoogleService-Info.plist + Mach-O strings), then scans the discovered
     Firebase services for security misconfigurations.
     """
     # Perform all validations
     validate_input_exclusivity(file, apk_dir, project_id, project_id_file, parse_dns_file, resume, resume_auth_file)
-    validate_resume_fast_extract(resume, fast_extract)
     validate_exclude_project_id(exclude_project_id, resume)
 
     # Handle resume auth file validation and get actual file path
@@ -638,7 +614,6 @@ def main(
     args = Args()
     args.file = file
     args.apk_dir = apk_dir
-    args.fast_extract = fast_extract
     args.resume = str(resume) if resume else None
     args.resume_file = resume_file
     args.output_dir = output_dir
@@ -674,7 +649,6 @@ def main(
     args.password = password
     args.resume_auth_file = str(validated_resume_auth_file) if validated_resume_auth_file else None
     args.exclude_project_id = exclude_project_id
-    args.timeout = timeout
     args.service_account = service_account
     args.private_key_content = private_key_content
 

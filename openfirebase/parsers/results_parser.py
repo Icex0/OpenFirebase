@@ -64,7 +64,7 @@ class ResultsParser:
                     if "\\n" in value and current_header == "Service_Account_Private_Key":
                         value = value.replace("\\n", "\n")
 
-                    # Clean up the header by removing source labels like "(JADX)" or "(Fast)"
+                    # Clean up the header by removing source labels like "(Fast)"
                     clean_header = self._clean_header(current_header)
 
                     # Add the item to results
@@ -73,7 +73,7 @@ class ResultsParser:
         return results
 
     def _clean_header(self, header: str) -> str:
-        """Clean header by removing source labels like "(JADX)" or "(Fast)".
+        """Clean header by removing source labels like "(Fast)".
 
         Args:
             header: Header string that may contain source labels

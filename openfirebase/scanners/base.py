@@ -1778,11 +1778,9 @@ class BaseScanner(ABC):
                 )
 
             # Individual summaries (matches console output format)
-            total_public = 0
-            
+
             # Helper function to write individual summary
             def write_individual_summary(scan_results, scan_type, resource_type):
-                nonlocal total_public
                 # Map scan types to display names (same as console output)
                 type_mapping = {
                     "DATABASES": "FIREBASE REALTIME DATABASE READ",
@@ -1801,8 +1799,8 @@ class BaseScanner(ABC):
                 
                 counts = self._count_scan_results(scan_results, resource_type)
                 labels = self._get_summary_labels(resource_type)
-                total_public += counts["public_count"]
-                
+
+
                 f.write(f"Total projects scanned: {counts['total_projects']}\n")
                 f.write(f"{labels['public']}: {counts['public_count']}\n")
                 f.write(f"{labels['protected']}: {counts['protected_count']}\n")

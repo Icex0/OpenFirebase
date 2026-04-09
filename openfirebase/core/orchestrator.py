@@ -14,7 +14,6 @@ from tqdm import tqdm
 
 from ..extractors.dns_parser import DNSParser
 from ..extractors.extractor import ANDROGUARD_AVAILABLE, FirebaseExtractor
-from ..extractors.jadx_extractor import JADXExtractor
 from ..extractors.project_id_extractor import ProjectIDExtractor
 from ..handlers.file_handler import FileHandler
 from ..handlers.multiprocessing_handler import process_apk_multiprocessing
@@ -40,26 +39,17 @@ from .config import BLUE, GREEN, ORANGE, RED, RESET, YELLOW
 class OpenFirebaseOrchestrator:
     """Main orchestrator for the OpenFirebase application."""
     
-    def _get_timeout_seconds(self, args):
-        """Convert timeout from minutes to seconds, or use default."""
-        if hasattr(args, 'timeout') and args.timeout is not None:
-            return args.timeout * 60  # Convert minutes to seconds
-        else:
-            from .config import DEFAULT_TIMEOUT_SECONDS
-            return DEFAULT_TIMEOUT_SECONDS
-
     def __init__(self):
         self.run_timestamp = generate_timestamp()
 
     def _check_java_availability(self):
-        """Check if Java is available for JADX and apksigner tools."""
+        """Check if Java is available for apksigner."""
         try:
-            # Try to run java -version to check if Java is installed
             result = subprocess.run(
-                ["java", "-version"], 
-                capture_output=True, 
-                text=True, 
-                timeout=10
+                ["java", "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -79,11 +69,11 @@ class OpenFirebaseOrchestrator:
             )
             return 1
 
-        # Check for Java availability for JADX and apksigner tools
+        # Java is required for apksigner (certificate extraction).
         if not self._check_java_availability():
             print(
                 f"{RED}[ERROR]{RESET} Java is not installed or not available in PATH. "
-                "JADX decompilation and remote config scanning will not work without Java. "
+                "Certificate extraction (apksigner) and remote config scanning will not work without Java."
             )
 
         try:
@@ -148,10 +138,8 @@ class OpenFirebaseOrchestrator:
     def _get_process_count(self, processes_arg):
         """Determine the number of processes to use."""
         if processes_arg is None:
-            # Limit to 5 processes for JADX to avoid overwhelming the system
             return min(5, multiprocessing.cpu_count())
-        # Still enforce maximum of 5 for JADX processing
-        return min(5, max(1, processes_arg))  # Ensure at least 1, max 5 processes
+        return min(5, max(1, processes_arg))
 
     def _handle_resume_mode(self, args, file_handler):
         """Handle --resume mode (resume from existing results file)."""
@@ -558,8 +546,8 @@ class OpenFirebaseOrchestrator:
             print(f"Error: File not found: {apk_path}")
             return 1
 
-        if not apk_path.suffix.lower() == ".apk":
-            print(f"Error: File must be an APK file: {apk_path}")
+        if apk_path.suffix.lower() not in (".apk", ".ipa"):
+            print(f"Error: File must be an .apk or .ipa bundle: {apk_path}")
             return 1
 
         # Create output path in output directory
@@ -570,14 +558,9 @@ class OpenFirebaseOrchestrator:
         # Clear output file
         file_handler.clear_output_file(timestamped_output)
 
-        if args.fast_extract:
-            results = self._process_single_file_fast(
-                apk_path, timestamped_output, file_handler
-            )
-        else:
-            results = self._process_single_file_jadx(
-                apk_path, timestamped_output, file_handler, args
-            )
+        results = self._process_single_file_fast(
+            apk_path, timestamped_output, file_handler
+        )
 
         if results is None:
             return 1
@@ -587,19 +570,70 @@ class OpenFirebaseOrchestrator:
         )
 
     def _process_single_file_fast(self, apk_path, timestamped_output, file_handler):
-        """Process single file with fast extraction."""
+        """Process single file with the default fast extractor.
+
+        For .apk this scans resources.arsc + the DEX string pool +
+        assets/res-raw text resources. For .ipa it walks the plist
+        and Mach-O.
+        """
         print(
-            f"{BLUE}[INF]{RESET} Using fast extraction for {apk_path.name} - source code analysis disabled!"
-        )
-        print(
-            f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections and hardcoded service account credentials will not be detected! (accidentally included service account JSON files in assets/raw will still be found)"
+            f"{BLUE}[INF]{RESET} Extracting Firebase items from {apk_path.name}..."
         )
 
-        # Show simple progress for fast extraction
-        with tqdm(total=1, desc="Scanning files", unit="file", leave=True) as pbar:
-            extractor = FirebaseExtractor(apk_path.parent)
-            firebase_items = extractor.process_apk(apk_path)
-            pbar.update(1)
+        extractor = FirebaseExtractor(apk_path.parent)
+
+        # For .apk we can pre-count classes*.dex files and tick the
+        # progress bar once per DEX as the string pool is walked. For
+        # .ipa there are no DEX files — fall back to a single tick.
+        is_ipa = apk_path.suffix.lower() == ".ipa"
+        if is_ipa:
+            # IPA work has 4 logical stages: plist + Mach-O string scan
+            # (the slow one, kicked off immediately), service accounts,
+            # hardcoded PEM keys, bundle ID. The string scan happens
+            # inside extract_from_apk before the on_stage callback can
+            # fire, so we set the initial label up front and let
+            # process_apk advance the bar through the remaining stages.
+            with tqdm(
+                total=4,
+                desc="Scanning plists & Mach-O strings",
+                unit="step",
+                leave=True,
+            ) as pbar:
+                def _on_stage(label):
+                    pbar.update()
+                    pbar.set_description(label)
+                    pbar.refresh()
+
+                firebase_items = extractor.process_apk(
+                    apk_path, on_stage=_on_stage,
+                )
+                # Final tick after the last stage completes.
+                pbar.update()
+                pbar.set_description("Done")
+                pbar.refresh()
+        else:
+            from ..extractors.dex_extractor import DexExtractor
+            dex_count = DexExtractor.count_dex_files(apk_path) or 1
+            with tqdm(
+                total=dex_count,
+                desc="Scanning DEX files",
+                unit="dex",
+                leave=True,
+            ) as pbar:
+                ticks = {"n": 0}
+
+                def _on_dex():
+                    pbar.update()
+                    ticks["n"] += 1
+                    if ticks["n"] >= dex_count:
+                        pbar.set_description(
+                            "Extracting signatures & service accounts",
+                        )
+                        pbar.refresh()
+
+                firebase_items = extractor.process_apk(
+                    apk_path, on_dex=_on_dex,
+                )
 
         # Extract real package name
         from ..utils import get_apk_package_name
@@ -619,55 +653,9 @@ class OpenFirebaseOrchestrator:
         results = extractor.get_results()
         return results
 
-    def _process_single_file_jadx(self, apk_path, timestamped_output, file_handler, args):
-        """Process single file with JADX extraction."""
-        try:
-            timeout_seconds = self._get_timeout_seconds(args)
-            jadx_extractor = JADXExtractor(apk_path.parent, processing_mode="single", timeout_seconds=timeout_seconds)
-            jadx_ver = f" v{jadx_extractor.jadx_version}" if jadx_extractor.jadx_version else ""
-            print(
-                f"{BLUE}[INF]{RESET} Processing single APK file with JADX{jadx_ver} decompilation: {apk_path.name}"
-            )
-            firebase_items = jadx_extractor.process_file_with_progress(apk_path)
-
-            # Extract real package name
-            from ..utils import get_apk_package_name
-            package_name = get_apk_package_name(apk_path)
-
-            # Display extracted items status
-            from ..utils import format_firebase_items_status
-            status_msg = format_firebase_items_status(package_name, firebase_items, "JADX")
-            print(status_msg)
-
-            if firebase_items:
-                file_handler.save_single_result(
-                    package_name, firebase_items, timestamped_output
-                )
-
-            results = jadx_extractor.get_results()
-            return results
-        except KeyboardInterrupt:
-            print(f"\n{RED}[X]{RESET} Processing interrupted by user - saving partial results...")
-            # Return whatever results we have collected so far
-            return jadx_extractor.get_results()
-
     def _process_directory(self, args, file_handler, process_count):
         """Process a directory of APK files."""
-        # Process APK files
-        if args.fast_extract:
-            extractor = FirebaseExtractor(args.apk_dir)
-            print(
-                f"{BLUE}[INF]{RESET} Using fast extraction for APK processing - source code analysis disabled"
-            )
-            print(
-                f"{YELLOW}[WARNING]{RESET} Firebase items in the source code, such as Firestore collections and hardcoded service account credentials will not be detected (bundled JSON service account files in assets/raw will still be found)"
-            )
-        else:
-            timeout_seconds = self._get_timeout_seconds(args)
-            extractor = JADXExtractor(
-                args.apk_dir, processing_mode="directory", timeout_seconds=timeout_seconds
-            )
-            print(f"{BLUE}[INF]{RESET} Using JADX decompilation for APK processing...")
+        extractor = FirebaseExtractor(args.apk_dir)
 
         # Get APK files to process
         apk_files = extractor.get_apk_files()
@@ -675,14 +663,9 @@ class OpenFirebaseOrchestrator:
         if not apk_files:
             return 0
 
-        if args.fast_extract:
-            print(
-                f"{BLUE}[INF]{RESET} Found {len(apk_files)} APK files to process with fast extraction using {process_count} processes..."
-            )
-        else:
-            print(
-                f"{BLUE}[INF]{RESET} Found {len(apk_files)} APK files to process with JADX using {process_count} processes (max 5 concurrent)..."
-            )
+        print(
+            f"{BLUE}[INF]{RESET} Found {len(apk_files)} APK/IPA files to process using {process_count} processes..."
+        )
 
         # Create output path in output directory
         timestamped_output = create_output_path(
@@ -731,20 +714,17 @@ class OpenFirebaseOrchestrator:
                 # Use position=0 to keep the main progress bar at the bottom
                 with tqdm(
                     total=len(apk_files),
-                    desc="Processing APKs",
-                    unit="apk",
+                    desc="Processing files",
+                    unit="file",
                     position=0,
                     leave=True,
                 ) as pbar:
                     # Prepare arguments for multiprocessing
-                    timeout_seconds = self._get_timeout_seconds(args)
                     process_args = [
                         (
                             str(apk_path),
                             str(args.apk_dir),
-                            args.fast_extract,
                             timestamped_output,
-                            timeout_seconds,
                         )
                         for apk_path in apk_files
                     ]
