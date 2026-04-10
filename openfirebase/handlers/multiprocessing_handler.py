@@ -23,8 +23,12 @@ def process_apk_multiprocessing(args_tuple) -> tuple:
     apk_path_str, input_folder, output_file = args_tuple
     apk_path = Path(apk_path_str)
 
-    from ..utils import get_apk_package_name
-    package_name = get_apk_package_name(apk_path)
+    # Start with the filename stem as the identifier. If process_apk
+    # succeeds we'll upgrade to the canonical package name / bundle ID
+    # that process_apk already extracts as part of its normal work —
+    # that way we avoid parsing the APK twice with androguard just to
+    # pre-fetch a name for error reporting.
+    package_name = apk_path.stem
 
     def subprocess_signal_handler(_sig, _frame):
         import sys
@@ -40,6 +44,16 @@ def process_apk_multiprocessing(args_tuple) -> tuple:
         file_handler = FileHandler()
         extractor = FirebaseExtractor(input_folder)
         firebase_items = extractor.process_apk(apk_path)
+
+        # Upgrade the identifier to the canonical name now that
+        # process_apk has appended APK_Package_Name (Android) or
+        # IPA_Bundle_ID (iOS) to firebase_items. Fall back to the
+        # filename stem if neither is present (e.g. parse failure).
+        for header, value in firebase_items:
+            if header in ("APK_Package_Name", "IPA_Bundle_ID") and value:
+                package_name = value
+                break
+
         status_msg = format_firebase_items_status(
             package_name, firebase_items, "Fast"
         )

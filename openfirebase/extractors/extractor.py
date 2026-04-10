@@ -22,11 +22,12 @@ extension.
 
 import json
 import re
-import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from ..core.config import FILTERED_COLLECTION_VALUES, FILTERED_DOMAINS, FILTERED_PRIVATE_KEY_SUBSTRINGS
+from tqdm import tqdm
+
+from ..core.config import FILTERED_COLLECTION_VALUES, FILTERED_DOMAINS, FILTERED_PRIVATE_KEY_SUBSTRINGS, RED, RESET, YELLOW
 from ..parsers.pattern_loader import get_firebase_patterns, get_pattern_metadata
 from .dex_extractor import DexExtractor
 from .ipa_extractor import IpaExtractor
@@ -50,6 +51,38 @@ except ImportError:
     ANDROGUARD_AVAILABLE = False
 
 
+# Per-path androguard APK object cache. Androguard parsing is
+# expensive (manifest + resources.arsc + DEX index all get rebuilt on
+# each ``APK(path)`` call) and non-deterministically flaky under memory
+# pressure. ``process_apk`` would otherwise parse the same APK twice
+# in one call — once for resources.arsc, once for signature / package
+# name — so we memoize here and clear at the end of ``process_apk``.
+# Keyed by ``str(path)`` so workers can ``clear`` without a Path dep.
+_APK_CACHE: Dict[str, "APK"] = {}
+
+
+def _get_cached_apk(apk_path: Path):
+    """Return a memoized androguard APK object for ``apk_path``.
+
+    Re-parsing the same APK multiple times in one worker doubles both
+    the wall-clock time and the peak memory of extraction, and makes
+    transient parse failures more likely under memory pressure. This
+    cache guarantees a single parse per APK per ``process_apk`` call.
+    """
+    key = str(apk_path)
+    cached = _APK_CACHE.get(key)
+    if cached is not None:
+        return cached
+    apk = APK(apk_path)
+    _APK_CACHE[key] = apk
+    return apk
+
+
+def _clear_cached_apk(apk_path: Path) -> None:
+    """Drop the cached APK object for ``apk_path`` (call at end of scan)."""
+    _APK_CACHE.pop(str(apk_path), None)
+
+
 class FirebaseExtractor:
     """Extracts Firebase items from APK files by parsing strings.xml."""
 
@@ -62,7 +95,6 @@ class FirebaseExtractor:
         """Initialize the extractor with the input folder path."""
         self.input_folder = Path(input_folder)
         self.results: Dict[str, List[Tuple[str, str]]] = {}
-        self.results_lock = threading.Lock()  # Thread-safe access to results
 
     @staticmethod
     def is_ipa(path: Path) -> bool:
@@ -94,7 +126,7 @@ class FirebaseExtractor:
             # 1) strings.xml from resources.arsc (historical source).
             arsc_lines: List[str] = []
             try:
-                apk = APK(apk_path)
+                apk = _get_cached_apk(apk_path)
                 resources = apk.get_android_resources()
                 if resources:
                     string_resources = resources.get_strings_resources()
@@ -112,10 +144,21 @@ class FirebaseExtractor:
                             arsc_lines.append(string_resources.decode("utf-8"))
                         except UnicodeDecodeError:
                             pass
-            except Exception:
-                # Resource table read failed — DEX walk below may still
-                # find Firebase items, so don't bail.
-                pass
+                    else:
+                        tqdm.write(
+                            f"{YELLOW}[WARNING]{RESET} resources.arsc returned unexpected type "
+                            f"({type(string_resources).__name__}) for {apk_path.name}"
+                        )
+                else:
+                    tqdm.write(
+                        f"{YELLOW}[WARNING]{RESET} resources.arsc returned None for {apk_path.name} "
+                        f"— resource strings will be missing from results"
+                    )
+            except Exception as e:
+                tqdm.write(
+                    f"{RED}[X]{RESET} resources.arsc parse failed for {apk_path.name}: "
+                    f"{type(e).__name__}: {e}"
+                )
 
             # 2) DEX string pool + 3) assets/ and res/raw/ text files.
             dex_blob = DexExtractor.build_strings_blob(apk_path, on_dex=on_dex)
@@ -130,7 +173,11 @@ class FirebaseExtractor:
             blob_parts.append("</resources>")
             return "\n".join(blob_parts)
 
-        except Exception:
+        except Exception as e:
+            tqdm.write(
+                f"{RED}[X]{RESET} extract_strings_xml_content failed for {apk_path.name}: "
+                f"{type(e).__name__}: {e}"
+            )
             return ""
 
     def _extract_with_timeout(self, apk_path: Path, on_dex=None) -> List[Tuple[str, str]]:
@@ -190,9 +237,11 @@ class FirebaseExtractor:
                         firebase_items.append((header, link))
                         seen_links.add(link)
 
-        except Exception:
-            # Error processing APK
-            pass
+        except Exception as e:
+            tqdm.write(
+                f"{RED}[X]{RESET} _extract_with_timeout failed for {apk_path.name}: "
+                f"{type(e).__name__}: {e}"
+            )
 
         return firebase_items
 
@@ -269,34 +318,8 @@ class FirebaseExtractor:
         return None
 
     def extract_from_apk(self, apk_path: Path, on_dex=None) -> List[Tuple[str, str]]:
-        """Extract Firebase items from strings.xml in a single APK file with 2-minute timeout."""
-        result = []
-        exception = None
-
-        def target():
-            nonlocal result, exception
-            try:
-                result = self._extract_with_timeout(apk_path, on_dex=on_dex)
-            except Exception as e:
-                exception = e
-
-        # Create thread for extraction
-        thread = threading.Thread(target=target)
-        thread.daemon = True
-        thread.start()
-
-        # Wait for 2 minutes (120 seconds)
-        thread.join(timeout=120)
-
-        if thread.is_alive():
-            # Extraction timeout (2 minutes) - skipping
-            return []
-
-        if exception:
-            # Error processing APK
-            return []
-
-        return result
+        """Extract Firebase items from a single APK/IPA file."""
+        return self._extract_with_timeout(apk_path, on_dex=on_dex)
 
     def get_apk_files(self) -> List[Path]:
         """Get all APK files from the input folder."""
@@ -387,7 +410,12 @@ class FirebaseExtractor:
                     firebase_items.append(("Hardcoded_Private_Key", pem))
 
             from .signature_extractor import SignatureExtractor
-            cert_sha1_list, apk_package_name = SignatureExtractor.extract_apk_signature(apk_path)
+            # Reuse the androguard APK object that extract_strings_xml_content
+            # already parsed (if any) to avoid a second full APK parse.
+            cached_apk = _APK_CACHE.get(str(apk_path))
+            cert_sha1_list, apk_package_name = SignatureExtractor.extract_apk_signature(
+                apk_path, apk=cached_apk
+            )
 
             package_name = apk_package_name if apk_package_name else apk_path.stem
 
@@ -397,12 +425,14 @@ class FirebaseExtractor:
                 firebase_items.append(("APK_Package_Name", apk_package_name))
 
         if firebase_items:
-            with self.results_lock:
-                self.results[package_name] = firebase_items
+            self.results[package_name] = firebase_items
 
         # Drop cached DEX strings now that both consumers have run.
         if not IpaExtractor.is_ipa(apk_path):
             DexExtractor.clear_cache(apk_path)
+            # Drop the cached androguard APK object too so the worker's
+            # memory footprint doesn't grow unbounded across many APKs.
+            _clear_cached_apk(apk_path)
 
         return firebase_items
 

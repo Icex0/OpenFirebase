@@ -162,6 +162,23 @@ class DexExtractor:
                     flat.append(s)
 
                 # Bytecode walk for tracked invoke targets.
+                # Skip the expensive walk entirely if the DEX doesn't
+                # reference any Firestore classes — no references means
+                # zero chance of finding collection()/document() calls,
+                # and walking 500K+ methods for nothing can take 30-40s
+                # per DEX, which pushes large APKs past the extraction
+                # timeout under concurrency.
+                has_firestore_refs = any(
+                    "firebase/firestore" in s for s in group
+                )
+                if not has_firestore_refs:
+                    if on_dex is not None:
+                        try:
+                            on_dex()
+                        except Exception:
+                            pass
+                    continue
+
                 try:
                     for em in dex.get_encoded_methods():
                         try:

@@ -796,7 +796,7 @@ class OpenFirebaseOrchestrator:
     def _handle_multiprocessing_result(self, result, extractor, pbar):
         """Handle the result from multiprocessing."""
         if len(result) == 5:  # Error case with status message
-            package_name, firebase_items, success, error, status_msg = result
+            package_name, firebase_items, success, _error, status_msg = result
             if not success:
                 tqdm.write(f"{RED}[X]{RESET} {status_msg}")
             else:

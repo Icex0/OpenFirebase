@@ -73,14 +73,12 @@ class FileHandler:
                 for base_header, items in grouped_links.items():
                     file.write(f"[{base_header}]\n")
                     for header, value in items:
-                        # Escape newlines in values (e.g. PEM private keys) to keep one-line format
-                        escaped_value = value.replace("\n", "\\n") if "\n" in value else value
                         # Show source info if it exists
                         source_info = re.search(r"\s*(\([^)]+\))$", header)
                         if source_info:
-                            file.write(f"- {escaped_value} {source_info.group(1)}\n")
+                            file.write(f"- {value} {source_info.group(1)}\n")
                         else:
-                            file.write(f"- {escaped_value}\n")
+                            file.write(f"- {value}\n")
                 file.write("\n")
         except Exception as e:
             # Return error for main process to handle with tqdm.write()

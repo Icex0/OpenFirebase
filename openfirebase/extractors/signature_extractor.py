@@ -86,12 +86,16 @@ class SignatureExtractor:
             return None
 
     @staticmethod
-    def extract_apk_signature(apk_path: Path) -> Tuple[List[str], Optional[str]]:
+    def extract_apk_signature(apk_path: Path, apk=None) -> Tuple[List[str], Optional[str]]:
         """Extract SHA-1 certificate hashes and package name from APK file.
-        
+
         Args:
             apk_path: Path to APK file
-            
+            apk: Optional pre-parsed androguard APK object. If provided,
+                avoids a second ``APK(apk_path)`` parse (which is the
+                single biggest source of memory pressure per APK). When
+                None, falls back to parsing the APK fresh.
+
         Returns:
             Tuple of (sha1_hashes_list, package_name) where sha1_hashes_list contains all certificates
 
@@ -127,12 +131,14 @@ class SignatureExtractor:
                             if sha1_hash:  # Only add non-empty hashes
                                 sha1_hashes.append(sha1_hash)
 
-            # Extract package name using androguard (primary method)
+            # Extract package name using androguard (primary method).
+            # Reuse the caller-provided APK object if available to avoid
+            # re-parsing the whole APK a second time.
             package_name = None
             try:
-                # Try using androguard APK.get_package() first
-                from androguard.core.apk import APK
-                apk = APK(apk_path)
+                if apk is None:
+                    from androguard.core.apk import APK
+                    apk = APK(apk_path)
                 package_name = apk.get_package()
             except Exception:
                 # If androguard fails, fall back to APK filename
