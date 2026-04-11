@@ -24,6 +24,7 @@ class FirebaseAuth:
         proxy: str = None,
         referer: str = None,
         ios_bundle_id: str = None,
+        google_id_token: str = None,
     ):
         """Initialize Firebase authentication handler.
 
@@ -32,6 +33,7 @@ class FirebaseAuth:
             proxy: Proxy URL for HTTP requests
             referer: Value for the Referer header to bypass HTTP referrer API key restrictions
             ios_bundle_id: Value for X-Ios-Bundle-Identifier to bypass iOS-app API key restrictions
+            google_id_token: Google OAuth ID token for signInWithIdp fallback when email/password auth is disabled
 
         """
         self.timeout = timeout
@@ -56,6 +58,9 @@ class FirebaseAuth:
             self.session.verify = False
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        # Google OAuth ID token for signInWithIdp fallback
+        self._google_id_token = google_id_token
 
         # Store authentication tokens per project
         self._auth_tokens: Dict[str, str] = {}
@@ -561,6 +566,84 @@ class FirebaseAuth:
             print(f"{RED}[AUTH]{RESET} Network error during anonymous sign-in for project {project_id}: {e}")
             return None
 
+    def _sign_in_with_google_oauth(
+        self,
+        project_id: str,
+        api_key: str,
+        google_id_token: str,
+        package_name: Optional[str] = None,
+        cert_sha1: Optional[str] = None
+    ) -> Optional[str]:
+        """Sign in using a Google OAuth ID token via signInWithIdp.
+
+        This is a fallback for projects that have email/password auth disabled
+        but Google sign-in enabled. The user must provide a Google ID token
+        captured from the app's Google sign-in flow (e.g. via an intercepting
+        proxy).
+
+        Args:
+            project_id: Firebase project ID
+            api_key: Firebase API key
+            google_id_token: Google OAuth ID token (JWT from Google sign-in)
+            package_name: Android package name for X-Android-Package header
+            cert_sha1: Android certificate SHA-1 hash for X-Android-Cert header
+
+        Returns:
+            Firebase ID token if successful, None if failed
+
+        """
+        try:
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key={api_key}"
+            payload = {
+                "postBody": f"id_token={google_id_token}&providerId=google.com",
+                "requestUri": "http://localhost",
+                "returnIdpCredential": True,
+                "returnSecureToken": True,
+            }
+
+            print(f"{BLUE}[AUTH]{RESET} Trying Google OAuth sign-in for project: {project_id}")
+
+            headers = {}
+            if package_name:
+                headers["X-Android-Package"] = package_name
+            if cert_sha1:
+                headers["X-Android-Cert"] = cert_sha1
+
+            response = self.session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout,
+            )
+
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    id_token = response_data.get("idToken")
+
+                    if id_token:
+                        self._auth_tokens[project_id] = id_token
+                        print(f"{GREEN}[AUTH]{RESET} Google OAuth sign-in successful for project {project_id}")
+                        return id_token
+                    print(f"{RED}[AUTH]{RESET} No idToken in Google OAuth response for project {project_id}")
+                    return None
+
+                except ValueError as e:
+                    print(f"{RED}[AUTH]{RESET} Failed to parse Google OAuth JSON response for project {project_id}: {e}")
+                    return None
+            else:
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get("error", {}).get("message", "Unknown error")
+                    print(f"{RED}[AUTH]{RESET} Google OAuth sign-in failed for project {project_id}: {error_message}")
+                except ValueError:
+                    print(f"{RED}[AUTH]{RESET} Google OAuth sign-in failed for project {project_id} (HTTP {response.status_code})")
+                return None
+
+        except requests.exceptions.RequestException as e:
+            print(f"{RED}[AUTH]{RESET} Network error during Google OAuth sign-in for project {project_id}: {e}")
+            return None
+
     def decode_jwt(self, token: str) -> Optional[Dict]:
         """Decode a JWT token and extract the payload.
         
@@ -653,6 +736,38 @@ class FirebaseAuth:
             Tuple of (id_token, validated_project_id) if successful, None if failed
 
         """
+        # If no email/password provided, skip straight to Google OAuth
+        if not email and self._google_id_token:
+            print("=" * 80)
+            for api_key in api_keys:
+                # Clear any previous failure for this project
+                if project_id in self._auth_failures:
+                    del self._auth_failures[project_id]
+
+                cert_sha1 = (cert_sha1_list or [None])[0]
+                oauth_token = self._sign_in_with_google_oauth(
+                    project_id, api_key, self._google_id_token, package_name, cert_sha1
+                )
+                if oauth_token:
+                    validated_project_id = self.validate_jwt_aud(oauth_token, expected_project_ids)
+                    if validated_project_id:
+                        self._jwt_project_mapping[project_id] = validated_project_id
+                        if output_dir:
+                            AuthDataHandler.save_auth_data(
+                                project_id=validated_project_id,
+                                api_key=api_key,
+                                package_name=package_name,
+                                cert_sha1=cert_sha1,
+                                app_id=app_id,
+                                output_dir=output_dir,
+                            )
+                        return oauth_token, validated_project_id
+                    print(f"{YELLOW}[AUTH]{RESET} JWT aud validation failed for Google OAuth token")
+                    if project_id in self._auth_tokens:
+                        del self._auth_tokens[project_id]
+            print(f"{RED}[AUTH]{RESET} Google OAuth sign-in failed for all API keys for project {project_id}")
+            return None
+
         # Prepare list of SHA-1 certificates to try (None is also valid for no certificate)
         certificates_to_try = cert_sha1_list or [None]
 
@@ -714,6 +829,38 @@ class FirebaseAuth:
                             print(f"{YELLOW}[AUTH]{RESET} Certificate {cert_sha1[:8]}... is valid, but email/password authentication is disabled for this project")
                         else:
                             print(f"{YELLOW}[AUTH]{RESET} Email/password authentication is disabled for this project")
+
+                        # Try Google OAuth fallback if a token was provided
+                        if self._google_id_token:
+                            # Clear the failure so we can store a new token
+                            if project_id in self._auth_failures:
+                                del self._auth_failures[project_id]
+
+                            oauth_token = self._sign_in_with_google_oauth(
+                                project_id, api_key, self._google_id_token, package_name, cert_sha1
+                            )
+                            if oauth_token:
+                                validated_project_id = self.validate_jwt_aud(oauth_token, expected_project_ids)
+                                if validated_project_id:
+                                    self._jwt_project_mapping[project_id] = validated_project_id
+
+                                    if output_dir:
+                                        AuthDataHandler.save_auth_data(
+                                            project_id=validated_project_id,
+                                            api_key=api_key,
+                                            package_name=package_name,
+                                            cert_sha1=cert_sha1,
+                                            app_id=app_id,
+                                            output_dir=output_dir,
+                                        )
+
+                                    return oauth_token, validated_project_id
+                                print(f"{YELLOW}[AUTH]{RESET} JWT aud validation failed for Google OAuth token")
+                                if project_id in self._auth_tokens:
+                                    del self._auth_tokens[project_id]
+                        else:
+                            print(f"{YELLOW}[AUTH]{RESET} Tip: use --google-id-token with a captured Google OAuth ID token to authenticate via Google sign-in")
+
                         break  # Stop trying certificates - we found a working certificate
                     break  # Stop trying certificates for this API key
 

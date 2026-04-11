@@ -281,6 +281,7 @@ class OpenFirebaseOrchestrator:
                 proxy=args.proxy,
                 referer=getattr(args, "referer", None),
                 ios_bundle_id=getattr(args, "ios_bundle_id", None),
+                google_id_token=getattr(args, "google_id_token", None),
             )
             print(f"{BLUE}[INF]{RESET} Authentication enabled - using saved authentication data")
 
@@ -386,6 +387,7 @@ class OpenFirebaseOrchestrator:
                 proxy=args.proxy,
                 referer=getattr(args, "referer", None),
                 ios_bundle_id=getattr(args, "ios_bundle_id", None),
+                google_id_token=getattr(args, "google_id_token", None),
             )
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
@@ -476,6 +478,7 @@ class OpenFirebaseOrchestrator:
                 proxy=args.proxy,
                 referer=getattr(args, "referer", None),
                 ios_bundle_id=getattr(args, "ios_bundle_id", None),
+                google_id_token=getattr(args, "google_id_token", None),
             )
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
@@ -1059,6 +1062,7 @@ class OpenFirebaseOrchestrator:
                 proxy=args.proxy,
                 referer=getattr(args, "referer", None),
                 ios_bundle_id=getattr(args, "ios_bundle_id", None),
+                google_id_token=getattr(args, "google_id_token", None),
             )
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")

@@ -115,15 +115,16 @@ def validate_auth_options(
     password: Optional[str],
     project_id: Optional[str] = None,
     project_id_file: Optional[Path] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    google_id_token: Optional[str] = None
 ) -> None:
     """Validate authentication option requirements."""
     if check_with_auth:
-        if not email:
+        if not email and not google_id_token:
             raise typer.BadParameter(
-                "--check-with-auth requires --email to be specified"
+                "--check-with-auth requires --email or --google-id-token to be specified"
             )
-        if not password:
+        if email and not password:
             raise typer.BadParameter(
                 "--check-with-auth requires --password to be specified"
             )
@@ -561,6 +562,12 @@ def main(
         help="Password for Firebase authentication (required with --check-with-auth)",
         rich_help_panel="Authentication"
     ),
+    google_id_token: Optional[str] = Option(
+        None,
+        "--google-id-token",
+        help="Google OAuth ID token for signInWithIdp fallback when email/password auth is disabled (capture from app's Google sign-in flow via intercepting proxy)",
+        rich_help_panel="Authentication"
+    ),
     resume_auth_file: Optional[Path] = Option(
         None,
         "--resume-auth-file",
@@ -598,7 +605,7 @@ def main(
     validate_credentials_usage(app_id, api_key, project_id, project_id_file, read_config)
     validate_fuzz_collections(fuzz_collections)
     validate_write_options(write_storage, write_firestore, write_rtdb, write_all)
-    validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key)
+    validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key, google_id_token)
     validate_remote_config_options(read_config, read_all, project_id, project_id_file, api_key, app_id, cert_sha1, package_name)
     private_key_content = validate_service_account_options(service_account, private_key)
 
@@ -647,6 +654,7 @@ def main(
     args.check_with_auth = check_with_auth
     args.email = email
     args.password = password
+    args.google_id_token = google_id_token
     args.resume_auth_file = str(validated_resume_auth_file) if validated_resume_auth_file else None
     args.exclude_project_id = exclude_project_id
     args.service_account = service_account

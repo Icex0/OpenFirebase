@@ -461,6 +461,7 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 
 - **Account Creation and sign-in**: Automatically attempts to create Firebase user accounts using the Identity Toolkit API with extracted API keys and fetch access token.
 - **Anonymous sign-in**: If account creation with email/password fails, automatically retries with anonymous sign-in.
+- **Google OAuth sign-in**: If email/password auth is disabled (`OPERATION_NOT_ALLOWED`), falls back to Google OAuth via `signInWithIdp` when `--google-id-token` is provided. Can also be used standalone without email/password. See [Google OAuth Authentication](#google-oauth-authentication).
 - **API Key Restriction Bypass**: Bypasses client-side Google API key restrictions by setting the matching headers — `--cert-sha1` + `--package-name` (Android, auto-extracted from APK), `--ios-bundle-id` (iOS), and `--referer` (HTTP referrer). Only IP-address restrictions provide real protection. These bypasses apply to Identity Toolkit (auth) and Remote Config requests, since those are the only Firebase APIs that authenticate via `?key=AIza...` and are therefore subject to API key restrictions.
 - **Multi-Key Testing**: Tests multiple extracted API keys and certificate combinations to find working authentication methods
 - **Authenticated Retry**: Retries previously failed read/write operations using obtained authentication token
@@ -491,6 +492,36 @@ An admin-level service account doesn't just bypass security rules for read/write
 - **Firestore**: Read/write any collection/document, regardless of security rules
 - **Storage**: Read/write any file in any bucket, regardless of security rules
 - **Firebase Auth Admin API**: List all user accounts, read user data (email, phone, display name, providers, MFA status, custom claims), create/delete users, generate custom auth tokens for user impersonation, and disable MFA
+
+</details>
+
+<details>
+<summary><strong>Google OAuth Authentication</strong></summary>
+
+Some Firebase projects have email/password authentication disabled but Google sign-in enabled. When OpenFirebase encounters `OPERATION_NOT_ALLOWED` during email/password auth, it can fall back to Google OAuth via `signInWithIdp` if a Google ID token is provided.
+
+#### How to Obtain a Google ID Token
+
+The token must come from the target app's own Google sign-in flow so that its `aud` claim matches the Firebase project's OAuth client ID.
+
+1. **Set up an intercepting proxy** (Burp Suite, mitmproxy, etc.) and install its CA certificate on your device or emulator.
+2. **Bypass SSL pinning** if the app enforces it (e.g. using Frida or objection).
+3. **Open the target app** and tap "Sign in with Google".
+4. **Complete the Google sign-in** with any Google account.
+5. **In your proxy history**, find the request to `identitytoolkit.googleapis.com/v1/accounts:signInWithIdp`. The app makes this call after the Google sign-in completes.
+6. **Copy the `id_token` value** from the `postBody` parameter in that request — it is a JWT starting with `eyJ...`.
+
+#### Usage
+
+```bash
+# Standalone — Google OAuth only, no email/password needed
+openfirebase -f app.apk -C --google-id-token "eyJhbGciOi..." --read-all
+
+# Combined — tries email/password first, falls back to Google OAuth on OPERATION_NOT_ALLOWED
+openfirebase -f app.apk -C -e test@test.com -p pass123 --google-id-token "eyJhbGciOi..." --read-all
+```
+
+Google ID tokens expire after approximately 1 hour, so capture a fresh token before scanning.
 
 </details>
 
@@ -568,8 +599,9 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | Argument | Short | Description |
 |----------|-------|-------------|
 | `--check-with-auth` | `-C` | For read and write checks returning 401/403, retry with Firebase authentication |
-| `--email` | `-e` | Email address for Firebase authentication (required with --check-with-auth) |
-| `--password` | `-p` | Password for Firebase authentication (required with --check-with-auth) |
+| `--email` | `-e` | Email address for Firebase authentication (required with --check-with-auth unless --google-id-token is used) |
+| `--password` | `-p` | Password for Firebase authentication (required with --email) |
+| `--google-id-token` | | Google OAuth ID token for signInWithIdp fallback when email/password auth is disabled (see [Google OAuth Authentication](#google-oauth-authentication)) |
 | `--resume-auth-file` | | Path to auth_data.json file or results directory containing saved authentication data for direct authentication (skips trial-and-error auth process) |
 
 ### Service Account Authentication
@@ -625,6 +657,12 @@ openfirebase --project-id my-project --service-account firebase-adminsdk-xxxxx@m
 ```bash
 # If a service account is found during extraction, it will be used automatically for scanning
 openfirebase -f app.apk --read-all
+```
+
+#### Authenticated scan using Google OAuth (for projects with email/password auth disabled)
+```bash
+# Capture the Google ID token from the app's sign-in flow via intercepting proxy, then:
+openfirebase -f app.apk -C --google-id-token "eyJhbGciOi..." --read-all
 ```
 
 ## Disclaimer
