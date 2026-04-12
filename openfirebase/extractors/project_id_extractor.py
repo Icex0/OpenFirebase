@@ -53,14 +53,19 @@ class ProjectIDExtractor:
                     "Google_App_ID",
                     "Other_Google_App_ID",
                     "Firestore_Collection_Name",
+                    "Cloud_Functions_Callable_Name",
+                    "Cloud_Functions_Region",
                 ]:
                     continue
 
                 match = re.search(pattern, url, re.IGNORECASE)
                 if match:
-                    # Extract project ID from capture group 1 (since all URL patterns now have project ID in group 1)
                     if match.groups() and len(match.groups()) > 0:
-                        project_id = match.group(1)
+                        # Cloud_Functions_URL has project ID in group 2
+                        # (group 1 is region, group 3 is function name).
+                        # All other URL patterns have it in group 1.
+                        pid_group = 2 if pattern_name == "Cloud_Functions_URL" else 1
+                        project_id = match.group(pid_group)
                         # Validate project ID format and filter out invalid ones
                         if (
                             re.match(r"^[a-z0-9-]+$", project_id)

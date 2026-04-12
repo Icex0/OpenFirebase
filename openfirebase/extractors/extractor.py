@@ -27,7 +27,7 @@ from typing import Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from ..core.config import FILTERED_COLLECTION_VALUES, FILTERED_DOMAINS, FILTERED_PRIVATE_KEY_SUBSTRINGS, RED, RESET, YELLOW
+from ..core.config import FILTERED_CALLABLE_NAMES, FILTERED_COLLECTION_VALUES, FILTERED_DOMAINS, FILTERED_PRIVATE_KEY_SUBSTRINGS, RED, RESET, YELLOW
 from ..parsers.pattern_loader import get_firebase_patterns, get_pattern_metadata
 from .dex_extractor import DexExtractor
 from .ipa_extractor import IpaExtractor
@@ -226,6 +226,11 @@ class FirebaseExtractor:
                     # Filter out collection values that are in the filtered list
                     if "Collection" in header:
                         if link.lower() in [value.lower() for value in FILTERED_COLLECTION_VALUES]:
+                            continue
+
+                    # Filter out Cloud Functions callable name false positives
+                    if header == "Cloud_Functions_Callable_Name":
+                        if link in FILTERED_CALLABLE_NAMES:
                             continue
 
                     # Clean up the link (remove trailing slashes, etc.) - only for URL patterns

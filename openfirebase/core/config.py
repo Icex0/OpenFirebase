@@ -78,3 +78,60 @@ FILTERED_COLLECTION_VALUES = [
     "Received empty bid id",
 ]
 
+# Filtered Cloud Functions callable names — SDK internal method names
+# and common false positives from the getHttpsCallable() bytecode walk.
+FILTERED_CALLABLE_NAMES = [
+    "getHttpsCallable",
+    "getInstance",
+    "functionName",
+]
+
+# All supported GCP regions for Firebase Cloud Functions enumeration.
+# Ordered by likelihood: us-central1 (default) first, then remaining
+# Tier 1, then Tier 2. Scanner should iterate in this order.
+CLOUD_FUNCTIONS_REGIONS = [
+    # Tier 1
+    "us-central1",
+    "us-east1",
+    "us-east4",
+    "us-west1",
+    "europe-west1",
+    "asia-east1",
+    "asia-northeast1",
+    "asia-northeast2",
+    # Tier 1 (2nd gen only)
+    "us-east5",
+    "us-south1",
+    "europe-north1",
+    "europe-west4",
+    "europe-west8",
+    "europe-west9",
+    "europe-southwest1",
+    "me-west1",
+    "africa-south1",
+    # Tier 2
+    "us-west2",
+    "us-west3",
+    "us-west4",
+    "northamerica-northeast1",
+    "northamerica-northeast2",
+    "southamerica-east1",
+    "southamerica-west1",
+    "europe-west2",
+    "europe-west3",
+    "europe-west6",
+    "europe-west10",
+    "europe-west12",
+    "europe-central2",
+    "asia-east2",
+    "asia-south1",
+    "asia-south2",
+    "asia-southeast1",
+    "asia-southeast2",
+    "asia-northeast3",
+    "australia-southeast1",
+    "australia-southeast2",
+    "me-central1",
+    "me-central2",
+]
+

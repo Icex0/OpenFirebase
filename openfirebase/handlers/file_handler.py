@@ -188,3 +188,28 @@ class FileHandler:
             print(
                 f"Unique document names saved to {output_file} ({len(documents)} documents)"
             )
+
+    @staticmethod
+    def extract_cloud_functions_data(
+        results: Dict[str, List[Tuple[str, str]]],
+    ) -> Tuple[Set[str], Set[str], Set[str]]:
+        """Extract Cloud Functions callable names, full URLs, and regions from results.
+
+        Returns:
+            Tuple of (callable_names, full_urls, regions)
+
+        """
+        callable_names: Set[str] = set()
+        full_urls: Set[str] = set()
+        regions: Set[str] = set()
+
+        for package_name, items in results.items():
+            for header, value in items:
+                if header == "Cloud_Functions_Callable_Name":
+                    callable_names.add(value)
+                elif header == "Cloud_Functions_URL":
+                    full_urls.add(value)
+                elif header == "Cloud_Functions_Region":
+                    regions.add(value)
+
+        return callable_names, full_urls, regions

@@ -50,8 +50,26 @@ _INVOKE_TARGETS = (
     "Lcom/google/firebase/firestore/FirebaseFirestore;->collection(",
     "Lcom/google/firebase/firestore/CollectionReference;->document(",
     "Lcom/google/firebase/firestore/DocumentReference;->collection(",
+    # Cloud Functions: extract callable function names from
+    # ``FirebaseFunctions.getHttpsCallable("functionName")``.
+    "Lcom/google/firebase/functions/FirebaseFunctions;->getHttpsCallable(",
+    # Cloud Functions: extract non-default regions from
+    # ``FirebaseFunctions.getInstance("europe-west1")``.
+    "Lcom/google/firebase/functions/FirebaseFunctions;->getInstance(",
 )
 _CONST_STRING_RE = re.compile(r'(v\d+),\s*"(.*)"$', re.S)
+
+# Valid GCP regions for Cloud Functions. Used to distinguish
+# ``FirebaseFunctions.getInstance("us-central1")`` (region string)
+# from ``getInstance(firebaseApp)`` (object reference).
+_GCP_REGION_RE = re.compile(
+    r"^[a-z]+-[a-z]+[0-9]+$"
+)
+
+
+def _is_gcp_region(s: str) -> bool:
+    """Return True if ``s`` looks like a GCP region identifier."""
+    return bool(_GCP_REGION_RE.match(s))
 
 from androguard.core.apk import APK
 from androguard.core.dex import DEX
@@ -72,6 +90,14 @@ _MAX_TOTAL_RESOURCE_BYTES = 50 * 1024 * 1024
 # formats (images, fonts, audio) and bytecode (.dex, .arsc, .so) are
 # excluded — those don't carry literal Firebase URLs / API keys.
 _RESOURCE_TEXT_EXTS = (".json", ".xml", ".txt", ".properties", ".cfg", ".conf", ".js", ".html")
+
+# JS template literal interpolation: ``${...}``. Stripped from JS
+# resource files before the regex pipeline so that URL patterns
+# like ``cloudfunctions.net/func?a=${expr}&b=${expr}`` collapse to
+# ``cloudfunctions.net/func?a=&b=`` and the URL regex can capture
+# all static query parameter names in one pass.
+_JS_TEMPLATE_INTERPOLATION_RE = re.compile(r"\$\{.*?\}", re.DOTALL)
+_JS_RESOURCE_EXTS = (".js", ".html")
 
 # Where in the .apk we look for resource files. Anything outside these
 # trees (META-INF, classes*.dex, resources.arsc, lib/) is skipped.
@@ -163,15 +189,17 @@ class DexExtractor:
 
                 # Bytecode walk for tracked invoke targets.
                 # Skip the expensive walk entirely if the DEX doesn't
-                # reference any Firestore classes — no references means
-                # zero chance of finding collection()/document() calls,
+                # reference any Firestore or Cloud Functions classes —
+                # no references means zero chance of finding
+                # collection()/document()/getHttpsCallable() calls,
                 # and walking 500K+ methods for nothing can take 30-40s
                 # per DEX, which pushes large APKs past the extraction
                 # timeout under concurrency.
-                has_firestore_refs = any(
-                    "firebase/firestore" in s for s in group
+                has_target_refs = any(
+                    "firebase/firestore" in s or "firebase/functions" in s
+                    for s in group
                 )
-                if not has_firestore_refs:
+                if not has_target_refs:
                     if on_dex is not None:
                         try:
                             on_dex()
@@ -271,18 +299,26 @@ class DexExtractor:
             found_any = True
 
         # Synthesize source-shaped literals for bytecode-recovered call
-        # arguments (e.g. ``collection("users")``) so the existing
-        # Firestore_Collection_Name regex matches without modification.
+        # arguments so downstream regex patterns match without modification.
         for method, arg in invoke_args:
-            # Only ``collection(...)`` is currently surfaced as a
-            # finding by the regex pipeline. ``document(...)`` args are
-            # tracked but not synthesized — they're document paths, not
-            # collection names, and would mislabel if emitted as
-            # ``collection("...")``.
-            if method != "collection":
-                continue
-            lines.append(f'<string name="dex_invoke">collection("{arg}")</string>')
-            found_any = True
+            if method == "collection":
+                # Firestore collection names.
+                lines.append(f'<string name="dex_invoke">collection("{arg}")</string>')
+                found_any = True
+            elif method == "getHttpsCallable":
+                # Cloud Functions callable names — emitted as a tagged
+                # item so the extractor can surface them directly.
+                lines.append(f'<string name="dex_invoke_cf">getHttpsCallable("{arg}")</string>')
+                found_any = True
+            elif method == "getInstance":
+                # Cloud Functions region — only emit non-default regions.
+                # ``us-central1`` is the default and appears as a constant
+                # in the Firebase Functions SDK itself, so any app that
+                # merely depends on the SDK will have it in the string
+                # pool — emitting it would produce false positives.
+                if _is_gcp_region(arg) and arg != "us-central1":
+                    lines.append(f'<string name="dex_invoke_cf_region">cf_region("{arg}")</string>')
+                    found_any = True
 
         resource_fragment = cls._extract_resource_files(apk_path)
         if resource_fragment:
@@ -349,6 +385,12 @@ class DexExtractor:
                         text = raw.decode("utf-8", errors="ignore")
                     except Exception:
                         continue
+                    # Strip JS template literal interpolations so URL
+                    # regexes can see the full static skeleton (e.g.
+                    # ``?appName=&deviceId=`` instead of stopping at
+                    # the first ``${``).
+                    if lower.endswith(_JS_RESOURCE_EXTS):
+                        text = _JS_TEMPLATE_INTERPOLATION_RE.sub("", text)
                     # Wrap as one synthetic string per file. The
                     # downstream regex loop runs across the value
                     # contents directly, so a single wrapper element

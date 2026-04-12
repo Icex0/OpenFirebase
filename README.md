@@ -352,14 +352,35 @@ OpenFirebase extracts Firebase items from Android APKs *without* spawning JADX. 
 
 1. **`resources.arsc` strings** — every value in `strings.xml` across all `/res/values-*` locales (read via androguard, no decompile).
 2. **DEX string pool** — every literal in every `classes*.dex`, pulled directly from the `string_ids` table via `androguard.core.dex.DEX.get_strings()`. This is where Java/Kotlin string literals live: Firebase URLs, `AIza...` API keys, Firestore collection names, `gserviceaccount.com` emails, and full `-----BEGIN PRIVATE KEY-----` blocks pasted into source.
-3. **DEX bytecode walk** — `invoke-*` opcodes targeting `FirebaseFirestore.collection(...)` / `CollectionReference.document(...)` are paired with the most recent `const-string` in the same method to recover Firestore collection names that the bare string-pool walk can't label (the call site and the literal live in separate DEX tables).
-4. **`assets/` and `res/raw/` text files** — `*.json`, `*.xml`, `*.txt`, `*.properties`, `*.cfg`, `*.conf`, `*.js`, `*.html` are read straight from the zip and fed through the same regex pipeline. Catches Firebase config blobs that ship as resource files (including Capacitor/Cordova hybrid apps that embed config in `assets/public/*.js`).
+3. **DEX bytecode walk** — `invoke-*` opcodes targeting `FirebaseFirestore.collection(...)` / `CollectionReference.document(...)` / `FirebaseFunctions.getHttpsCallable(...)` / `FirebaseFunctions.getInstance(...)` are paired with the most recent `const-string` in the same method to recover Firestore collection names and Cloud Functions callable names that the bare string-pool walk can't label (the call site and the literal live in separate DEX tables).
+4. **`assets/` and `res/raw/` text files** — `*.json`, `*.xml`, `*.txt`, `*.properties`, `*.cfg`, `*.conf`, `*.js`, `*.html` are read straight from the zip and fed through the same regex pipeline. Catches Firebase config blobs that ship as resource files (including Capacitor/Cordova hybrid apps that embed config in `assets/public/*.js`). JavaScript template literal interpolations (`${...}`) are stripped before pattern matching so that URLs containing template variables (e.g. `?appName=${expr}&deviceId=${expr}`) collapse to their static skeleton (`?appName=&deviceId=`), preserving all query parameter names.
 
 **Hardcoded service-account recovery.** PEM private-key blocks found in the DEX pool are paired with a `gserviceaccount.com` email if both appear exactly once in the same DEX file (otherwise the PEM is emitted as a standalone `Hardcoded_Private_Key` finding). Service-account JSON files bundled in `assets/` or `res/raw/` are still parsed independently with the existing walker.
 
 **Known limitations.** Strings encrypted by DexGuard / Allatori / paid R8 plugins, runtime-built strings via `StringBuilder` / `String.format`, and strings embedded in native `lib/*.so` libraries are not recovered.
 
 Files are processed in order of size (smallest first).
+
+</details>
+
+<details>
+<summary><strong>Cloud Functions Extraction</strong></summary>
+
+OpenFirebase extracts Firebase Cloud Functions data from APKs and IPAs through multiple detection methods. All Firebase Cloud Functions are deployed at `https://REGION-PROJECT_ID.cloudfunctions.net/FUNCTION_NAME`.
+
+#### What is extracted
+
+- **Cloud Functions URLs** — Full `cloudfunctions.net` URLs found in DEX string pools, resource files, and iOS binaries. Captures the region, project ID, function name, subroutes, and any static query parameters. For example, `us-central1-myproject.cloudfunctions.net/api/users?limit=10` is captured as a single finding with the full path.
+- **Callable function names** — Extracted via DEX bytecode walking of `FirebaseFunctions.getHttpsCallable("functionName")` calls (Java/Kotlin) and regex matching of `httpsCallable(functions, "functionName")` calls (JavaScript in `assets/www/` for Cordova/Ionic/Capacitor apps). These are function names that the app invokes via the Firebase callable protocol.
+- **Non-default regions** — Extracted via bytecode walking of `FirebaseFunctions.getInstance("region")` calls. The default region `us-central1` is excluded as it appears as a hardcoded constant in the Firebase Functions SDK itself and would produce false positives for any app that includes the SDK as a dependency without actually using Cloud Functions.
+
+#### Limitations and manual analysis
+
+**Request body parameters cannot be reliably extracted.** Cloud Functions HTTP triggers (`onRequest`) are raw HTTP endpoints that may accept arbitrary request bodies, headers, and query parameters defined server-side. While the URL and static query parameter names are captured, the full request schema (required fields, expected JSON structure, authentication headers) is only visible in the app's source code. Manually inspect the JavaScript files in `assets/www/` (typically `build/main.js` or `build/vendor.js`) to find `fetch()` / `axios` calls that reveal the complete request format including headers and body parameters.
+
+**Obfuscated method parameters may be lost.** When an app uses OkHttp or similar HTTP libraries with ProGuard/R8 obfuscation, query parameter names added via builder methods (e.g. `.addQueryParameter("gateway_url", value)`) become `const-string` entries in the DEX pool but lose their association with the target URL. The parameter name exists in the string pool alongside thousands of other strings, and there is no reliable way to determine which URL it belongs to without data-flow analysis that is beyond what static regex and bytecode walking can achieve.
+
+**Runtime-determined callable names.** Some apps (particularly Cordova/hybrid apps) pass the callable function name as a runtime variable from JavaScript to the native Firebase SDK bridge (e.g. `getHttpsCallable(jSONArray.getString(0))`). In these cases the function name only exists in the JavaScript layer, not as a static string in the DEX — the bytecode walker cannot recover it. Check `assets/www/` JS files for these cases.
 
 </details>
 

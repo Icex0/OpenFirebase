@@ -73,6 +73,15 @@ _IOS_BINARY_MAX_BYTES = 256 * 1024 * 1024
 # exactly what GNU ``strings(1)`` extracts by default.
 _PRINTABLE_RUN_RE = re.compile(rb"[\x20-\x7e]{%d,}" % _IOS_BINARY_MIN_STRING_LEN)
 
+# Resource file scanning — mirrors the APK path's ``_extract_resource_files``
+# so Cordova/Ionic/React Native iOS apps have their JS/HTML scanned for
+# Firebase URLs, callable function names, etc.
+_RESOURCE_TEXT_EXTS = (".json", ".xml", ".txt", ".properties", ".cfg", ".conf", ".js", ".html")
+_JS_RESOURCE_EXTS = (".js", ".html")
+_JS_TEMPLATE_INTERPOLATION_RE = re.compile(r"\$\{.*?\}", re.DOTALL)
+_MAX_RESOURCE_FILE_BYTES = 5 * 1024 * 1024
+_MAX_TOTAL_RESOURCE_BYTES = 50 * 1024 * 1024
+
 
 class IpaExtractor:
     """Stateless container of iOS .ipa parsing helpers.
@@ -178,6 +187,14 @@ class IpaExtractor:
             found_any = True
             lines.append(binary_fragment)
 
+        # Append resource file scan (JS/HTML/JSON inside the app bundle)
+        # so Cordova/Ionic/React Native apps have their Firebase URLs,
+        # callable names, and Cloud Functions patterns caught.
+        resource_fragment = cls._extract_resource_files(ipa_path)
+        if resource_fragment:
+            found_any = True
+            lines.append(resource_fragment)
+
         if not found_any:
             return ""
         lines.append("</resources>")
@@ -214,6 +231,59 @@ class IpaExtractor:
             # generic name lets the unanchored Firebase URL / API key /
             # storage-bucket regexes match anywhere in the value.
             lines.append(f'<string name="ios_binary">{value}</string>')
+
+        if not lines:
+            return ""
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Resource file scanning (JS/HTML/JSON inside the app bundle)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _extract_resource_files(cls, ipa_path: Path) -> str:
+        """Walk text resources inside the .app bundle and emit a synthetic
+        strings.xml fragment.
+
+        iOS Cordova/Ionic apps bundle JS/HTML under the ``.app`` directory
+        (analogous to ``assets/www/`` in APKs). React Native apps bundle
+        ``main.jsbundle``. This method scans all text resource files so
+        the Firebase regex pipeline catches Cloud Functions URLs, callable
+        names (``httpsCallable``), and other patterns in JS source.
+        """
+        lines: List[str] = []
+        total_bytes = 0
+        try:
+            with zipfile.ZipFile(ipa_path) as zf:
+                for info in cls._iter_app_files(zf):
+                    if info.is_dir():
+                        continue
+                    lower = info.filename.lower()
+                    # Also match .jsbundle (React Native)
+                    if not (lower.endswith(_RESOURCE_TEXT_EXTS) or lower.endswith(".jsbundle")):
+                        continue
+                    if info.file_size > _MAX_RESOURCE_FILE_BYTES:
+                        continue
+                    if total_bytes + info.file_size > _MAX_TOTAL_RESOURCE_BYTES:
+                        break
+                    try:
+                        with zf.open(info) as fp:
+                            raw = fp.read()
+                    except Exception:
+                        continue
+                    total_bytes += len(raw)
+                    try:
+                        text = raw.decode("utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    # Strip JS template literal interpolations
+                    if lower.endswith(_JS_RESOURCE_EXTS) or lower.endswith(".jsbundle"):
+                        text = _JS_TEMPLATE_INTERPOLATION_RE.sub("", text)
+                    lines.append(f'<string name="ipa_resource">{text}</string>')
+        except (zipfile.BadZipFile, OSError):
+            return ""
+        except Exception:
+            return ""
 
         if not lines:
             return ""
