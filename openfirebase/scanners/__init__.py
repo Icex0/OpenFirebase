@@ -4,6 +4,7 @@ Contains all Firebase scanning modules organized by resource type.
 """
 
 from .base import BaseScanner
+from .cloud_functions_scanner import CloudFunctionsScanner
 from .config_scanner import ConfigScanner
 from .database_scanner import DatabaseScanner
 from .firestore_scanner import FirestoreScanner
@@ -12,6 +13,7 @@ from .unified_scanner import FirebaseScanner
 
 __all__ = [
     "BaseScanner",
+    "CloudFunctionsScanner",
     "ConfigScanner",
     "DatabaseScanner",
     "FirebaseScanner",

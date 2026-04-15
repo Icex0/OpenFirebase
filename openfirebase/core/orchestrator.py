@@ -87,7 +87,7 @@ class OpenFirebaseOrchestrator:
             print(f"\n{create_openfirebase_header()}\n")
 
             # Print start timestamp for all operations
-            print(f"{BLUE}[INF]{RESET} {get_current_datetime()}")
+            print(f"{BLUE}[INF]{RESET} Scan started at {get_current_datetime()}\n")
             
             # Display cert/package warnings if applicable
             # Don't show warnings in file (-f) or directory (-d) modes since cert-sha1 and package-name are extracted from APK files
@@ -117,6 +117,24 @@ class OpenFirebaseOrchestrator:
                         f"{feature_name} may fail if the API key is restricted to an Android app. "
                         f"For other restriction types use --referer (website) or --ios-bundle-id (iOS app)."
                     )
+
+            # Warn when Cloud Functions scan in project-ID mode is missing --app-id
+            scan_cf_requested = (
+                getattr(args, "scan_cloud_functions", False)
+                or getattr(args, "fuzz_functions", False)
+                or args.scan_all
+            )
+            if (
+                scan_cf_requested
+                and (args.scan_project_id or args.scan_project_id_file)
+                and not is_apk_extraction_mode
+                and not getattr(args, "app_id", None)
+            ):
+                print(
+                    f"{YELLOW}[WARNING]{RESET} --app-id not provided. "
+                    f"Google Cloud Storage liveness probing is disabled for Cloud Functions scanning and scans may waste requests on projects without Cloud Functions. "
+                    f"Pass --app-id 1:PROJECT_NUMBER:android:HASH to enable probing and source code leak detection.\n"
+                )
 
             # Route to appropriate workflow
             if args.resume:
@@ -211,6 +229,8 @@ class OpenFirebaseOrchestrator:
                     or args.scan_all
                     or args.scan_config
                     or args.scan_firestore
+                    or getattr(args, "scan_cloud_functions", False)
+                    or getattr(args, "fuzz_functions", False)
                     or args.write_storage
                     or args.write_firestore
                     or args.write_rtdb
@@ -262,6 +282,8 @@ class OpenFirebaseOrchestrator:
             or args.scan_storage
             or args.scan_firestore
             or args.scan_config
+            or getattr(args, "scan_cloud_functions", False)
+            or getattr(args, "fuzz_functions", False)
             or args.scan_all
         )
         write_flags = args.write_storage or args.write_firestore or args.write_rtdb or args.write_all
@@ -334,6 +356,8 @@ class OpenFirebaseOrchestrator:
             or args.scan_storage
             or args.scan_firestore
             or args.scan_config
+            or getattr(args, "scan_cloud_functions", False)
+            or getattr(args, "fuzz_functions", False)
             or args.scan_all
         )
         has_manual_credentials = bool(args.app_id and args.api_key)
@@ -354,7 +378,7 @@ class OpenFirebaseOrchestrator:
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
             print(
-                f"{RED}[ERROR]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id."
+                f"{RED}[ERROR]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id.\n"
             )
 
         # Parse project IDs (comma-separated)
@@ -417,6 +441,8 @@ class OpenFirebaseOrchestrator:
             or args.scan_storage
             or args.scan_firestore
             or args.scan_config
+            or getattr(args, "scan_cloud_functions", False)
+            or getattr(args, "fuzz_functions", False)
             or args.scan_all
         )
         write_firestore = getattr(args, "write_firestore", False) or getattr(args, "write_all", False)
@@ -436,7 +462,7 @@ class OpenFirebaseOrchestrator:
             print("   --read-config will be ignored.\n")
         elif args.scan_all and not has_manual_credentials:
             print(
-                f"{RED}[ERROR]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id-file."
+                f"{RED}[ERROR]{RESET} Remote Config scanning is not performed unless --app-id and --api-key are manually provided with --project-id-file.\n"
             )
 
         # Read project IDs from file
@@ -880,13 +906,15 @@ class OpenFirebaseOrchestrator:
                         unique_documents, documents_output
                     )
 
-                # Scan Firebase databases, storage, config, and/or firestore if scan options are enabled
+                # Scan Firebase databases, storage, config, firestore, and/or cloud functions if scan options are enabled
                 if (
                     args.scan_rtdb
                     or args.scan_storage
                     or args.scan_all
                     or args.scan_config
                     or args.scan_firestore
+                    or getattr(args, "scan_cloud_functions", False)
+                    or getattr(args, "fuzz_functions", False)
                     or args.write_storage
                     or args.write_firestore
                     or args.write_all
@@ -1107,6 +1135,54 @@ class OpenFirebaseOrchestrator:
             firebase_auth=firebase_auth,
         )
 
+    def _get_scan_output_path(self, args, filename, scans_performed):
+        """Get the output file path for a scan phase.
+
+        When multiple scans run, each gets its own file. When only one scan
+        runs, all output goes to full_scan_output.txt.
+        """
+        if scans_performed > 1:
+            return create_output_path(args.output_dir, filename, self.run_timestamp)
+        return create_output_path(args.output_dir, "full_scan_output.txt", self.run_timestamp)
+
+    def _handle_scan_display(
+        self, sub_scanner, results, label, output_file,
+        scans_performed, package_project_ids, all_auth_results, scan_summaries,
+    ):
+        """Handle post-scan display: print save message, collect auth results, display results.
+
+        Args:
+            sub_scanner: The scanner instance that performed the scan
+            results: Scan results dictionary
+            label: Human-readable label for the "saved to" message
+            output_file: Path where results were saved
+            scans_performed: Total number of scan phases being run
+            package_project_ids: Package-to-project-ID mapping (APK mode)
+            all_auth_results: Dict accumulating auth results across scans
+            scan_summaries: List accumulating (scanner, results) for end-of-run summaries
+        """
+        print(
+            f"{BLUE}[INF]{RESET} {label} results have been saved to {output_file}"
+        )
+
+        if scans_performed > 1:
+            # Collect authentication results BEFORE they get cleared by print_scan_details
+            for project_id, project_results in sub_scanner.all_authenticated_results.items():
+                if project_id not in all_auth_results:
+                    all_auth_results[project_id] = {}
+                all_auth_results[project_id].update(project_results)
+
+            # Multiple scans: print details immediately, save summary for end
+            sub_scanner.print_scan_details(
+                results, package_project_ids=package_project_ids
+            )
+            scan_summaries.append((sub_scanner, results))
+        else:
+            # Single scan: print everything immediately
+            sub_scanner.print_scan_results(
+                results, package_project_ids=package_project_ids
+            )
+
     def _perform_scanning_core(
         self,
         args,
@@ -1150,12 +1226,18 @@ class OpenFirebaseOrchestrator:
         # Determine what to scan based on mode
         is_apk_mode = package_project_ids is not None
 
+        # Cloud Functions scanning flags
+        scan_cloud_functions = getattr(args, "scan_cloud_functions", False) or args.scan_all
+        fuzz_functions = getattr(args, "fuzz_functions", False)
+        functions_wordlist = getattr(args, "functions_wordlist", None)
+
         if is_apk_mode:
             # APK mode: scan based on flags or default to all
             scan_rtdb = args.scan_rtdb or args.scan_all
             scan_storage = args.scan_storage or args.scan_all
             scan_firestore = args.scan_firestore or args.scan_all
             scan_config = args.scan_config or args.scan_all
+            scan_cloud_functions = scan_cloud_functions or args.scan_all
         else:
             # Project ID mode: respect specific flags or use defaults
             has_specific_scan_flags = (
@@ -1163,6 +1245,7 @@ class OpenFirebaseOrchestrator:
                 or args.scan_storage
                 or args.scan_firestore
                 or args.scan_config
+                or scan_cloud_functions
                 or args.scan_all
             )
             if has_specific_scan_flags:
@@ -1172,17 +1255,20 @@ class OpenFirebaseOrchestrator:
                 scan_firestore = args.scan_firestore or args.scan_all
                 # Enable config scanning only if manual credentials are provided
                 scan_config = (args.scan_config or args.scan_all) and has_manual_credentials
+                scan_cloud_functions = scan_cloud_functions or args.scan_all
             # No specific scan flags, default to all three (but not config unless manual credentials provided)
             elif args.write_storage or write_firestore or write_rtdb or args.write_all:
                 scan_rtdb = False
                 scan_storage = False
                 scan_firestore = False
                 scan_config = False
+                scan_cloud_functions = False
             else:
                 scan_rtdb = True
                 scan_storage = True
                 scan_firestore = True
                 scan_config = False  # Config scanning only available with manual credentials
+                scan_cloud_functions = False  # Cloud Functions scanning only when explicitly requested or --read-all
 
         # Determine what write operations to perform
         write_storage = args.write_storage or args.write_all
@@ -1192,6 +1278,7 @@ class OpenFirebaseOrchestrator:
         storage_scan_results = None
         config_scan_results = None
         firestore_scan_results = None
+        cloud_functions_scan_results = None
 
         # Initialize write results
         storage_write_results = None
@@ -1200,13 +1287,13 @@ class OpenFirebaseOrchestrator:
 
         # Store scan results for summary at end
         scan_summaries = []
-        
+
         # Store authentication results before they get cleared by print_scan_details
         all_auth_results = {}
 
         # Calculate how many scans are being performed for logic decisions
         scans_performed = sum(
-            [scan_rtdb, scan_storage, scan_firestore, scan_config, write_storage, write_rtdb, write_firestore]
+            [scan_rtdb, scan_storage, scan_firestore, scan_config, scan_cloud_functions, write_storage, write_rtdb, write_firestore]
         )
 
         # Parse collection names for Firestore scanning
@@ -1228,52 +1315,21 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase realtime databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            # Unified output file logic for both APK and Project ID modes
-            db_output_file = (
-                create_output_path(
-                    args.output_dir, "read_output_rtdb.txt", self.run_timestamp
-                )
-                if scans_performed > 1
-                else create_output_path(
-                    args.output_dir, "full_scan_output.txt", self.run_timestamp
-                )
-            )
-            # Always create open-only files for both single and multiple scans
-            
-            create_open_only = True
-            
+            db_output_file = self._get_scan_output_path(args, "read_output_rtdb.txt", scans_performed)
+
             if is_apk_mode:
-                db_scan_results = scanner.scan_databases(
+                db_scan_results = scanner.database_scanner.scan_databases(
                     project_ids, package_project_ids, db_output_file
                 )
             else:
-                db_scan_results = scanner.scan_databases(
-                    project_ids,
-                    output_file=db_output_file,
-                    create_open_only=create_open_only,
+                db_scan_results = scanner.database_scanner.scan_databases(
+                    project_ids, output_file=db_output_file, create_open_only=True,
                 )
 
-            print(
-                f"{BLUE}[INF]{RESET} Realtime Database read results have been saved to {db_output_file}"
+            self._handle_scan_display(
+                scanner.database_scanner, db_scan_results, "Realtime Database read",
+                db_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
             )
-
-            if scans_performed > 1:
-                # Collect authentication results BEFORE they get cleared by print_scan_details
-                for project_id, project_results in scanner.database_scanner.all_authenticated_results.items():
-                    if project_id not in all_auth_results:
-                        all_auth_results[project_id] = {}
-                    all_auth_results[project_id].update(project_results)
-                
-                # Multiple scans: print details immediately, save summary for end
-                scanner.print_scan_details(
-                    db_scan_results, "DATABASES", package_project_ids
-                )
-                scan_summaries.append((db_scan_results, "DATABASES"))
-            else:
-                # Single scan: print everything immediately
-                scanner.print_scan_results(
-                    db_scan_results, "DATABASES", package_project_ids
-                )
 
         # Scan storage
         if scan_storage:
@@ -1281,53 +1337,21 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase storage buckets{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            # Unified output file logic for both APK and Project ID modes
-            storage_output_file = (
-                create_output_path(
-                    args.output_dir, "read_output_storage.txt", self.run_timestamp
-                )
-                if scans_performed > 1
-                else create_output_path(
-                    args.output_dir, "full_scan_output.txt", self.run_timestamp
-                )
-            )
-            # Always create open-only files for both single and multiple scans
-            
-            create_open_only = True
-            
+            storage_output_file = self._get_scan_output_path(args, "read_output_storage.txt", scans_performed)
+
             if is_apk_mode:
-                storage_scan_results = scanner.scan_storage_buckets(
+                storage_scan_results = scanner.storage_scanner.scan_storage_buckets(
                     project_ids, package_project_ids, storage_output_file
                 )
             else:
-                storage_scan_results = scanner.scan_storage_buckets(
-                    project_ids,
-                    output_file=storage_output_file,
-                    create_open_only=create_open_only,
+                storage_scan_results = scanner.storage_scanner.scan_storage_buckets(
+                    project_ids, output_file=storage_output_file, create_open_only=True,
                 )
 
-            print(
-                f"{BLUE}[INF]{RESET} Storage read results have been saved to {storage_output_file}"
+            self._handle_scan_display(
+                scanner.storage_scanner, storage_scan_results, "Storage read",
+                storage_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
             )
-
-            if scans_performed > 1:
-                # Collect authentication results BEFORE they get cleared by print_scan_details
-                for project_id, project_results in scanner.storage_scanner.all_authenticated_results.items():
-                    if project_id not in all_auth_results:
-                        all_auth_results[project_id] = {}
-                    all_auth_results[project_id].update(project_results)
-                
-                # Multiple scans: print details immediately, save summary for end
-                scanner.print_scan_details(
-                    storage_scan_results, "STORAGE", package_project_ids
-                )
-                scan_summaries.append((storage_scan_results, "STORAGE"))
-            else:
-                # Single scan: print everything immediately
-                scanner.print_scan_results(
-                    storage_scan_results, "STORAGE", package_project_ids
-                )
-                # Note: authenticated results are cleared within print_scan_results after display
 
         # Scan Remote Config
         if scan_config:
@@ -1335,63 +1359,26 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase Remote Config{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
+            config_output_file = self._get_scan_output_path(args, "read_output_config.txt", scans_performed)
+
             if is_apk_mode:
                 config_data = extract_config_data(results)
                 if config_data:
-                    # Unified output file logic for both APK and Project ID modes
-                    config_output_file = (
-                        create_output_path(
-                            args.output_dir, "read_output_config.txt", self.run_timestamp
-                        )
-                        if scans_performed > 1
-                        else create_output_path(
-                            args.output_dir, "full_scan_output.txt", self.run_timestamp
-                        )
-                    )
-                    config_scan_results = scanner.scan_config(
+                    config_scan_results = scanner.config_scanner.scan_config(
                         config_data, package_project_ids, config_output_file
                     )
-                    print(
-                        f"{BLUE}[INF]{RESET} Remote Config read results have been saved to {config_output_file}"
+                    self._handle_scan_display(
+                        scanner.config_scanner, config_scan_results, "Remote Config read",
+                        config_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
                     )
-
-                    if scans_performed > 1:
-                        # Collect authentication results BEFORE they get cleared by print_scan_details
-                        for project_id, project_results in scanner.config_scanner.all_authenticated_results.items():
-                            if project_id not in all_auth_results:
-                                all_auth_results[project_id] = {}
-                            all_auth_results[project_id].update(project_results)
-                        
-                        # Multiple scans: print details immediately, save summary for end
-                        scanner.print_scan_details(
-                            config_scan_results, "REMOTE CONFIG", package_project_ids
-                        )
-                        scan_summaries.append((config_scan_results, "REMOTE CONFIG"))
-                    else:
-                        # Single scan: print everything immediately
-                        scanner.print_scan_results(
-                            config_scan_results, "REMOTE CONFIG", package_project_ids
-                        )
                 else:
                     print(
                         "No Firebase Remote Config data (API keys and App IDs) found in results."
                     )
             else:
-                # Project ID mode - config scanning requires manual credentials
-                # Unified output file logic for both APK and Project ID modes
-                config_output_file = (
-                    create_output_path(
-                        args.output_dir, "read_output_config.txt", self.run_timestamp
-                    )
-                    if scans_performed > 1
-                    else create_output_path(
-                        args.output_dir, "full_scan_output.txt", self.run_timestamp
-                    )
-                )
-                # Build config_data dictionary for project ID mode
+                # Project ID mode - build config_data from credentials
                 config_data = {}
-                
-                # If we're in --resume-auth-file mode, use saved auth data
+
                 if getattr(args, "resume_auth_file", None):
                     from ..handlers.auth_data_handler import AuthDataHandler
                     auth_data = AuthDataHandler.load_auth_data(args.resume_auth_file)
@@ -1405,7 +1392,6 @@ class OpenFirebaseOrchestrator:
                                 "package_name": project_auth_data.get("package_name")
                             }
                 else:
-                    # Use manual command line credentials
                     for project_id in project_ids:
                         config_data[project_id] = {
                             "api_key": args.api_key,
@@ -1414,26 +1400,13 @@ class OpenFirebaseOrchestrator:
                             "package_name": args.package_name
                         }
 
-                config_scan_results = scanner.scan_config(
+                config_scan_results = scanner.config_scanner.scan_config(
                     config_data, package_project_ids=None, output_file=config_output_file
                 )
-                print(
-                    f"{BLUE}[INF]{RESET} Remote Config read results have been saved to {config_output_file}"
+                self._handle_scan_display(
+                    scanner.config_scanner, config_scan_results, "Remote Config read",
+                    config_output_file, scans_performed, None, all_auth_results, scan_summaries,
                 )
-
-                if scans_performed > 1:
-                    # Collect authentication results BEFORE they get cleared by print_scan_details
-                    for project_id, project_results in scanner.config_scanner.all_authenticated_results.items():
-                        if project_id not in all_auth_results:
-                            all_auth_results[project_id] = {}
-                        all_auth_results[project_id].update(project_results)
-                    
-                    # Multiple scans: print details immediately, save summary for end
-                    scanner.print_scan_details(config_scan_results, "REMOTE CONFIG")
-                    scan_summaries.append((config_scan_results, "REMOTE CONFIG"))
-                else:
-                    # Single scan: print everything immediately
-                    scanner.print_scan_results(config_scan_results, "REMOTE CONFIG")
 
         # Scan Firestore
         if scan_firestore:
@@ -1441,58 +1414,118 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firestore databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            # Unified output file logic for both APK and Project ID modes
-            firestore_output_file = (
-                create_output_path(
-                    args.output_dir, "read_output_firestore.txt", self.run_timestamp
-                )
-                if scans_performed > 1
-                else create_output_path(
-                    args.output_dir, "full_scan_output.txt", self.run_timestamp
-                )
-            )
-            # Always create open-only files for both single and multiple scans
-            
-            create_open_only = True
-            
+            firestore_output_file = self._get_scan_output_path(args, "read_output_firestore.txt", scans_performed)
+
             if is_apk_mode:
-                firestore_scan_results = scanner.scan_firestore(
-                    project_ids,
-                    collections_per_package,
-                    package_project_ids,
-                    firestore_output_file,
-                    create_open_only,
-                    custom_collections,
+                firestore_scan_results = scanner.firestore_scanner.scan_firestore(
+                    project_ids, collections_per_package, package_project_ids,
+                    firestore_output_file, True, custom_collections,
                 )
             else:
-                firestore_scan_results = scanner.scan_firestore(
-                    project_ids,
-                    output_file=firestore_output_file,
-                    create_open_only=create_open_only,
-                    custom_collections=custom_collections,
+                firestore_scan_results = scanner.firestore_scanner.scan_firestore(
+                    project_ids, output_file=firestore_output_file,
+                    create_open_only=True, custom_collections=custom_collections,
                 )
 
-            print(
-                f"{BLUE}[INF]{RESET} Firestore read results have been saved to {firestore_output_file}"
+            self._handle_scan_display(
+                scanner.firestore_scanner, firestore_scan_results, "Firestore read",
+                firestore_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
             )
 
-            if scans_performed > 1:
-                # Collect authentication results BEFORE they get cleared by print_scan_details
-                for project_id, project_results in scanner.firestore_scanner.all_authenticated_results.items():
-                    if project_id not in all_auth_results:
-                        all_auth_results[project_id] = {}
-                    all_auth_results[project_id].update(project_results)
-                
-                # Multiple scans: print details immediately, save summary for end
-                scanner.print_scan_details(
-                    firestore_scan_results, "FIRESTORE", package_project_ids
-                )
-                scan_summaries.append((firestore_scan_results, "FIRESTORE"))
-            else:
-                # Single scan: print everything immediately
-                scanner.print_scan_results(
-                    firestore_scan_results, "FIRESTORE", package_project_ids
-                )
+        # Scan Cloud Functions
+        if scan_cloud_functions:
+            cf_output_file = self._get_scan_output_path(args, "read_output_cloud_functions.txt", scans_performed)
+
+            # Extract cloud functions data from APK results or CLI flags
+            extracted_urls = set()
+            callable_names = set()
+            extracted_regions = set()
+            google_app_ids = set()
+            app_ids_by_project: Dict[str, Set[str]] = {}
+
+            callable_names_by_project: Dict[str, Set[str]] = {}
+
+            if results:
+                from ..handlers.file_handler import FileHandler
+                callable_names, extracted_urls, extracted_regions = FileHandler.extract_cloud_functions_data(results)
+                for package_name, items in results.items():
+                    package_project_ids_local = set()
+                    package_app_ids = set()
+                    package_callable_names = set()
+                    for header, value in items:
+                        if header in ("Google_App_ID", "Other_Google_App_ID"):
+                            google_app_ids.add(value)
+                            package_app_ids.add(value)
+                        elif header in ("Firebase_Project_ID", "Other_Firebase_Project_ID"):
+                            package_project_ids_local.add(value)
+                        elif header == "Cloud_Functions_Callable_Name":
+                            package_callable_names.add(value)
+                    # Pair project IDs with app IDs + callables found in the same package
+                    # (same google-services.json → shared project number and function scope)
+                    for pid in package_project_ids_local:
+                        app_ids_by_project.setdefault(pid, set()).update(package_app_ids)
+                        callable_names_by_project.setdefault(pid, set()).update(package_callable_names)
+
+            # Project-ID mode: pick up App IDs from --app-id or --resume-auth-file for GCS probing
+            if not is_apk_mode:
+                if getattr(args, "app_id", None):
+                    google_app_ids.add(args.app_id)
+                    for pid in project_ids:
+                        app_ids_by_project.setdefault(pid, set()).add(args.app_id)
+                if getattr(args, "resume_auth_file", None):
+                    from ..handlers.auth_data_handler import AuthDataHandler
+                    auth_data = AuthDataHandler.load_auth_data(args.resume_auth_file)
+                    if auth_data:
+                        for saved_pid, project_data in auth_data.items():
+                            saved_app_id = project_data.get("app_id")
+                            if saved_app_id:
+                                google_app_ids.add(saved_app_id)
+                                app_ids_by_project.setdefault(saved_pid, set()).add(saved_app_id)
+
+            print("\n" + "=" * 80)
+            print(f"{BLUE}[INF]{RESET} Testing {BLUE}read{RESET} access to {BLUE}Firebase Cloud Functions{RESET} (rate: {args.scan_rate} req/s)...")
+            print("=" * 80 + "\n")
+
+            manual_function_names = getattr(args, "function_name", None)
+            if manual_function_names:
+                for name in manual_function_names.split(","):
+                    name = name.strip()
+                    if name:
+                        callable_names.add(name)
+                        # Apply manual function names to every project
+                        for pid in project_ids:
+                            callable_names_by_project.setdefault(pid, set()).add(name)
+
+            manual_regions = getattr(args, "function_region", None)
+            if manual_regions:
+                if manual_regions.strip().lower() == "all":
+                    from ..core.config import CLOUD_FUNCTIONS_REGIONS
+                    extracted_regions.update(CLOUD_FUNCTIONS_REGIONS)
+                else:
+                    for region in manual_regions.split(","):
+                        region = region.strip()
+                        if region:
+                            extracted_regions.add(region)
+
+            cloud_functions_scan_results = scanner.cloud_functions_scanner.scan_cloud_functions(
+                project_ids,
+                extracted_urls=extracted_urls or None,
+                callable_names=callable_names or None,
+                extracted_regions=extracted_regions or None,
+                package_project_ids=package_project_ids,
+                output_file=cf_output_file,
+                create_open_only=True,
+                fuzz=fuzz_functions,
+                fuzz_wordlist_path=functions_wordlist,
+                google_app_ids=google_app_ids or None,
+                app_ids_by_project=app_ids_by_project or None,
+                callable_names_by_project=callable_names_by_project or None,
+            )
+
+            self._handle_scan_display(
+                scanner.cloud_functions_scanner, cloud_functions_scan_results, "Cloud Functions read",
+                cf_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
+            )
 
         # Test write access to storage
         if write_storage:
@@ -1500,57 +1533,23 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firebase storage buckets{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            # Unified output file logic for both APK and Project ID modes
-            storage_write_output_file = (
-                create_output_path(
-                    args.output_dir, "write_output_storage.txt", self.run_timestamp
-                )
-                if scans_performed > 1
-                else create_output_path(
-                    args.output_dir, "full_scan_output.txt", self.run_timestamp
-                )
-            )
-            # Always create open-only files for both single and multiple scans
-            
-            create_open_only = True
-            
+            storage_write_output_file = self._get_scan_output_path(args, "write_output_storage.txt", scans_performed)
+
             if is_apk_mode:
-                storage_write_results = scanner.write_to_storage_buckets(
-                    project_ids,
-                    args.write_storage_file,
-                    package_project_ids,
-                    storage_write_output_file,
-                    create_open_only,
+                storage_write_results = scanner.storage_scanner.write_to_project_ids(
+                    project_ids, args.write_storage_file,
+                    package_project_ids, storage_write_output_file, True,
                 )
             else:
-                storage_write_results = scanner.write_to_storage_buckets(
-                    project_ids,
-                    args.write_storage_file,
-                    output_file=storage_write_output_file,
-                    create_open_only=create_open_only,
+                storage_write_results = scanner.storage_scanner.write_to_project_ids(
+                    project_ids, args.write_storage_file,
+                    output_file=storage_write_output_file, create_open_only=True,
                 )
 
-            print(
-                f"{BLUE}[INF]{RESET} Storage write results have been saved to {storage_write_output_file}"
+            self._handle_scan_display(
+                scanner.storage_scanner, storage_write_results, "Storage write",
+                storage_write_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
             )
-
-            if scans_performed > 1:
-                # Collect authentication results BEFORE they get cleared by print_scan_details
-                for project_id, project_results in scanner.storage_scanner.all_authenticated_results.items():
-                    if project_id not in all_auth_results:
-                        all_auth_results[project_id] = {}
-                    all_auth_results[project_id].update(project_results)
-                
-                # Multiple scans: print details immediately, save summary for end
-                scanner.print_scan_details(
-                    storage_write_results, "STORAGE WRITE", package_project_ids
-                )
-                scan_summaries.append((storage_write_results, "STORAGE WRITE"))
-            else:
-                # Single scan: print everything immediately
-                scanner.print_scan_results(
-                    storage_write_results, "STORAGE WRITE", package_project_ids
-                )
 
         # Test write access to Realtime Database
         if write_rtdb:
@@ -1558,57 +1557,23 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firebase Realtime Database{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            # Unified output file logic for both APK and Project ID modes
-            rtdb_write_output_file = (
-                create_output_path(
-                    args.output_dir, "write_output_rtdb.txt", self.run_timestamp
-                )
-                if scans_performed > 1
-                else create_output_path(
-                    args.output_dir, "full_scan_output.txt", self.run_timestamp
-                )
-            )
-            # Always create open-only files for both single and multiple scans
-            
-            create_open_only = True
-            
+            rtdb_write_output_file = self._get_scan_output_path(args, "write_output_rtdb.txt", scans_performed)
+
             if is_apk_mode:
-                rtdb_write_results = scanner.write_to_databases(
-                    project_ids,
-                    args.write_rtdb_file,
-                    package_project_ids,
-                    rtdb_write_output_file,
-                    create_open_only,
+                rtdb_write_results = scanner.database_scanner.write_to_project_ids(
+                    project_ids, args.write_rtdb_file,
+                    package_project_ids, rtdb_write_output_file, True,
                 )
             else:
-                rtdb_write_results = scanner.write_to_databases(
-                    project_ids,
-                    args.write_rtdb_file,
-                    output_file=rtdb_write_output_file,
-                    create_open_only=create_open_only,
+                rtdb_write_results = scanner.database_scanner.write_to_project_ids(
+                    project_ids, args.write_rtdb_file,
+                    output_file=rtdb_write_output_file, create_open_only=True,
                 )
 
-            print(
-                f"{BLUE}[INF]{RESET} Realtime Database write results have been saved to {rtdb_write_output_file}"
+            self._handle_scan_display(
+                scanner.database_scanner, rtdb_write_results, "Realtime Database write",
+                rtdb_write_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
             )
-
-            if scans_performed > 1:
-                # Collect authentication results BEFORE they get cleared by print_scan_details
-                for project_id, project_results in scanner.database_scanner.all_authenticated_results.items():
-                    if project_id not in all_auth_results:
-                        all_auth_results[project_id] = {}
-                    all_auth_results[project_id].update(project_results)
-                
-                # Multiple scans: print details immediately, save summary for end
-                scanner.print_scan_details(
-                    rtdb_write_results, "REALTIME DATABASE WRITE", package_project_ids
-                )
-                scan_summaries.append((rtdb_write_results, "REALTIME DATABASE WRITE"))
-            else:
-                # Single scan: print everything immediately
-                scanner.print_scan_results(
-                    rtdb_write_results, "REALTIME DATABASE WRITE", package_project_ids
-                )
 
         # Test write access to Firestore
         if write_firestore:
@@ -1616,80 +1581,56 @@ class OpenFirebaseOrchestrator:
             print(f"{BLUE}[INF]{RESET} Testing {BLUE}write{RESET} access to {BLUE}Firestore databases{RESET} (rate: {args.scan_rate} req/s)...")
             print("=" * 80 + "\n")
 
-            # Unified output file logic for both APK and Project ID modes
-            firestore_write_output_file = (
-                create_output_path(
-                    args.output_dir, "write_output_firestore.txt", self.run_timestamp
-                )
-                if scans_performed > 1
-                else create_output_path(
-                    args.output_dir, "full_scan_output.txt", self.run_timestamp
-                )
-            )
-            # Always create open-only files for both single and multiple scans
-            
-            create_open_only = True
-            
+            firestore_write_output_file = self._get_scan_output_path(args, "write_output_firestore.txt", scans_performed)
+
             if is_apk_mode:
-                firestore_write_results = scanner.write_to_firestore_databases(
-                    project_ids,
-                    args.write_firestore_value,
-                    package_project_ids,
-                    firestore_write_output_file,
-                    create_open_only,
+                firestore_write_results = scanner.firestore_scanner.write_to_project_ids(
+                    project_ids, args.write_firestore_value,
+                    package_project_ids, firestore_write_output_file, True,
                 )
             else:
-                firestore_write_results = scanner.write_to_firestore_databases(
-                    project_ids,
-                    args.write_firestore_value,
-                    output_file=firestore_write_output_file,
-                    create_open_only=create_open_only,
+                firestore_write_results = scanner.firestore_scanner.write_to_project_ids(
+                    project_ids, args.write_firestore_value,
+                    output_file=firestore_write_output_file, create_open_only=True,
                 )
 
-            print(
-                f"{BLUE}[INF]{RESET} Firestore write results have been saved to {firestore_write_output_file}"
+            self._handle_scan_display(
+                scanner.firestore_scanner, firestore_write_results, "Firestore write",
+                firestore_write_output_file, scans_performed, package_project_ids, all_auth_results, scan_summaries,
             )
-
-            if scans_performed > 1:
-                # Collect authentication results BEFORE they get cleared by print_scan_details
-                for project_id, project_results in scanner.firestore_scanner.all_authenticated_results.items():
-                    if project_id not in all_auth_results:
-                        all_auth_results[project_id] = {}
-                    all_auth_results[project_id].update(project_results)
-                
-                # Multiple scans: print details immediately, save summary for end
-                scanner.print_scan_details(
-                    firestore_write_results, "FIRESTORE WRITE", package_project_ids
-                )
-                scan_summaries.append((firestore_write_results, "FIRESTORE WRITE"))
-            else:
-                # Single scan: print everything immediately
-                scanner.print_scan_results(
-                    firestore_write_results, "FIRESTORE WRITE", package_project_ids
-                )
 
         # Save combined results if multiple scan types were performed
         warning_messages = []
         combined_output_file = None
         if scans_performed > 1:
+            # Build scan_sections list of (scanner, results, title) tuples
+            scan_sections = []
+            if db_scan_results:
+                scan_sections.append((scanner.database_scanner, db_scan_results, "Realtime Database"))
+            if storage_scan_results:
+                scan_sections.append((scanner.storage_scanner, storage_scan_results, "Storage"))
+            if config_scan_results:
+                scan_sections.append((scanner.config_scanner, config_scan_results, "Remote Config"))
+            if firestore_scan_results:
+                scan_sections.append((scanner.firestore_scanner, firestore_scan_results, "Firestore"))
+            if cloud_functions_scan_results:
+                scan_sections.append((scanner.cloud_functions_scanner, cloud_functions_scan_results, "Cloud Functions"))
+            if storage_write_results:
+                scan_sections.append((scanner.storage_scanner, storage_write_results, "Storage Write"))
+            if rtdb_write_results:
+                scan_sections.append((scanner.database_scanner, rtdb_write_results, "Realtime Database Write"))
+            if firestore_write_results:
+                scan_sections.append((scanner.firestore_scanner, firestore_write_results, "Firestore Write"))
+
             if is_apk_mode:
                 filename = "read_output_full.txt" if args.scan_all or args.write_all else "full_scan_output.txt"
                 combined_output_file = create_output_path(
                     args.output_dir, filename, self.run_timestamp
                 )
-                # For --read-all: collect warning messages to print at end, for others: print immediately
-                print_warnings_immediately = not args.scan_all and not args.write_all
                 warning_messages = scanner.save_combined_scan_results(
-                    db_scan_results=db_scan_results,
-                    storage_scan_results=storage_scan_results,
-                    config_scan_results=config_scan_results,
-                    firestore_scan_results=firestore_scan_results,
-                    storage_write_results=storage_write_results,
-                    rtdb_write_results=rtdb_write_results,
-                    firestore_write_results=firestore_write_results,
+                    scan_sections,
                     output_file=combined_output_file,
                     package_project_ids=package_project_ids,
-                    print_warnings=print_warnings_immediately,
                     all_auth_results=all_auth_results,
                 )
                 # For --read-all: defer this message, for others: print immediately
@@ -1701,18 +1642,9 @@ class OpenFirebaseOrchestrator:
                 combined_output_file = create_output_path(
                     args.output_dir, "full_scan_output.txt", self.run_timestamp
                 )
-                # Defer warning messages to print at end with summaries
                 warning_messages = scanner.save_combined_scan_results(
-                    db_scan_results=db_scan_results,
-                    storage_scan_results=storage_scan_results,
-                    config_scan_results=config_scan_results,
-                    firestore_scan_results=firestore_scan_results,
-                    storage_write_results=storage_write_results,
-                    rtdb_write_results=rtdb_write_results,
-                    firestore_write_results=firestore_write_results,
+                    scan_sections,
                     output_file=combined_output_file,
-                    package_project_ids=None,
-                    print_warnings=False,
                     all_auth_results=all_auth_results,
                 )
 
@@ -1725,8 +1657,8 @@ class OpenFirebaseOrchestrator:
             print("\n" + "=" * 80)
             print(f"{BLUE}[INF]{RESET} SCAN SUMMARIES")
             print("=" * 80)
-            for scan_results, scan_type in scan_summaries:
-                scanner.print_scan_summary(scan_results, scan_type, args.output_dir)
+            for sub_scanner, scan_results in scan_summaries:
+                sub_scanner.print_scan_summary(scan_results)
 
             # Print collected warning messages at the end (APK mode with --read-all/--write-all or Project ID modes)
             if (is_apk_mode and (args.scan_all or args.write_all) and warning_messages) or (not is_apk_mode and warning_messages):
@@ -1863,6 +1795,10 @@ class OpenFirebaseOrchestrator:
             
             if read_firestore_collection_count > 0:
                 lines.append(f"Read access on Firestore collections when authenticated: {read_firestore_collection_count}")
+
+            read_cf_urls = len([url for urls in read_auth_success_summary.values() for url in urls if "cloudfunctions.net" in url])
+            if read_cf_urls > 0:
+                lines.append(f"Read access on Cloud Functions when authenticated: {read_cf_urls}")
 
             # Display write access counts (counting individual URLs like unauthenticated)
             write_db_urls = len([url for urls in write_auth_success_summary.values() for url in urls if "firebaseio.com" in url or "firebasedatabase.app" in url])

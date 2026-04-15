@@ -17,6 +17,10 @@ from .base import BaseScanner
 class DatabaseScanner(BaseScanner):
     """Scans Firebase Realtime Databases to check accessibility and security status."""
 
+    resource_type = "database"
+    display_name = "FIREBASE REALTIME DATABASE"
+    resource_word = "databases"
+
     def scan_project_id(self, project_id: str) -> Dict[str, str]:
         """Scan a Firebase project ID to check database accessibility.
 
@@ -220,7 +224,20 @@ class DatabaseScanner(BaseScanner):
                 f.write(f"Firebase {scan_type} Scan Results\n")
                 f.write("=" * 80 + "\n\n")
 
-        for project_id in sorted(project_ids):
+        ordered_project_ids = []
+        seen = set()
+        if package_project_ids:
+            for package_name, project_id_set in package_project_ids.items():
+                for pid in sorted(project_id_set):
+                    if pid in project_ids and pid not in seen:
+                        ordered_project_ids.append(pid)
+                        seen.add(pid)
+        for pid in sorted(project_ids):
+            if pid not in seen:
+                ordered_project_ids.append(pid)
+                seen.add(pid)
+
+        for project_id in ordered_project_ids:
             # Check for shutdown request
             if is_shutdown_requested():
                 print(f"\n{RED}[X]{RESET} Shutdown requested. Stopping {scan_type.lower()} scan...")
@@ -256,7 +273,7 @@ class DatabaseScanner(BaseScanner):
             # Create open-only results file if requested (for single scans)
             if create_open_only:
                 self._save_open_only_results(
-                    results, output_file, scan_type.lower(), package_project_ids
+                    results, output_file, package_project_ids
                 )
 
         return results
@@ -297,7 +314,7 @@ class DatabaseScanner(BaseScanner):
                     f.write(f"Content: {result['response_content']}\n")
 
                 status_message = self._get_status_message(
-                    status, security, message, result, "database", colorize=False
+                    status, security, message, result, colorize=False
                 )
                 f.write(f"{status_message}\n")
                 f.write("\n")
@@ -305,52 +322,37 @@ class DatabaseScanner(BaseScanner):
             f.write("\n")
 
     def _save_final_summary_to_file(
-        self, results: Dict[str, Dict[str, str]], output_file: str, resource_type: str
+        self, results: Dict[str, Dict[str, str]], output_file: str, _resource_type: str = None
     ):
         """Save final summary to file."""
         with open(output_file, "a", encoding="utf-8") as f:
-            counts = self._count_scan_results(results, resource_type)
-            labels = self._get_summary_labels(resource_type)
+            counts = self._count_scan_results(results)
+            labels = self._get_summary_labels()
 
-            f.write("[UNAUTH] SCAN SUMMARY FIREBASE REALTIME DATABASE READ\n")
+            f.write(f"[UNAUTH] SCAN SUMMARY {self.display_name} READ\n")
             f.write("=" * 80 + "\n")
             f.write(f"Total projects scanned: {counts['total_projects']}\n")
             f.write(f"{labels['public']}: {counts['public_count']}\n")
             f.write(f"{labels['protected']}: {counts['protected_count']}\n")
-            if resource_type not in [
-                "config",
-                "firestore",
-            ]:  # Config and Firestore don't have "not found" status
+            if "not_found" in labels:
                 f.write(f"{labels['not_found']}: {counts['not_found_count']}\n")
-
-            # Add resource-specific counts
-            if resource_type == "config":
-                f.write(
-                    f"{labels['missing_config']}: {counts['missing_config_count']}\n"
-                )
-                f.write(f"{labels['no_config']}: {counts['no_config_count']}\n")
-            elif resource_type == "database":
+            if "locked" in labels:
                 f.write(f"{labels['locked']}: {counts['locked_count']}\n")
+
+            self._write_extra_summary_counts(f, counts, labels)
 
             if counts["rate_limited_count"] > 0:
                 f.write(f"{labels['rate_limited']}: {counts['rate_limited_count']}\n")
             f.write(f"{labels['other']}: {counts['other_count']}\n")
 
             if counts["public_count"] > 0:
-                if resource_type == "storage":
-                    resource_word = "storage buckets"
-                elif resource_type == "config":
-                    resource_word = "remote configs"
-                elif resource_type == "firestore":
-                    resource_word = "Firestore databases"
-                else:
-                    resource_word = "databases"
                 f.write(
-                    f"\nWARNING: {counts['public_count']} public {resource_word} found!\n"
+                    f"\nWARNING: {counts['public_count']} public {self.resource_word} found!\n"
                 )
                 f.write(
-                    f"These {resource_word} are accessible without authentication.\n"
+                    f"These {self.resource_word} are accessible without authentication.\n"
                 )
+                self._write_extra_summary_warnings(f)
 
     # Write methods for RTDB
     def write_to_project_id(self, project_id: str, json_file_path: str) -> Dict[str, str]:

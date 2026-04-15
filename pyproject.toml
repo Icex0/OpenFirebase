@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfirebase"
-version = "1.2.0"
-description = "Automated Firebase security scanner to scan realtime and firestore databases, storage buckets and remote configs for unauth read and write access Resources"
+version = "1.3.0"
+description = "Automated Firebase security scanner to scan realtime and firestore databases, storage buckets, remote configs and cloud functions for unauth read and write access"
 readme = "README.md"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
     {name = "Icex0"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",

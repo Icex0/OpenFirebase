@@ -1,21 +1,101 @@
-MIT License
+Custom Noncommercial License 1.0.0
 
-Copyright (c) 2025 Ice0
+Copyright 2026 Icex0
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ACCEPTANCE
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+In order to use this software, you must agree to these terms as both strict
+obligations and conditions to all your licenses.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+PERMITTED USES
+
+The following uses are explicitly permitted:
+
+1. Personal use for research, experimentation, and testing for the benefit
+   of public knowledge, personal study, hobby projects, or amateur pursuits,
+   without any anticipated commercial application.
+
+2. Use by any charitable organization, educational institution, public
+   research organization, public safety or health organization, environmental
+   protection organization, or government institution, regardless of funding
+   source.
+
+3. Security research and vulnerability disclosure, including participation in
+   bug bounty programs, whether by independent researchers or security
+   professionals employed by commercial organizations, provided the software
+   itself is not incorporated into a commercial product or service.
+
+4. Penetration testing engagements conducted by security professionals or
+   firms on behalf of clients, provided the software is used as a tool during
+   the assessment and is not embedded into or redistributed as part of a
+   commercial product or service.
+
+PROHIBITED USES
+
+The following uses are explicitly prohibited:
+
+1. Incorporating this software into any commercial product, platform, or
+   service that is sold, licensed, or otherwise monetized.
+
+2. Using this software as a component of, or to power, any automated system,
+   AI agent, machine learning pipeline, or software bot that operates on
+   behalf of a commercial entity or as part of a commercial product or
+   service. This includes, without limitation, AI-driven security assessment
+   platforms, automated vulnerability scanners offered as a service, and
+   any agent-based tooling used to generate commercial value.
+
+3. Offering this software, or any service substantially powered by this
+   software, to third parties for payment or other commercial consideration.
+
+4. Any use that primarily serves the commercial interests of a legal entity,
+   even if not directly sold, including internal business operations where
+   the software provides material commercial advantage.
+
+COMMERCIAL LICENSING
+
+If you wish to use this software in a manner not permitted above, you must
+obtain a separate written commercial license from the copyright holder.
+Contact: [YOUR CONTACT EMAIL]
+
+COPYRIGHT LICENSE
+
+Subject to the permitted uses above, the licensor grants you a copyright
+license to use, copy, and make changes to the software for permitted purposes.
+You may not sublicense or transfer your licenses to anyone else.
+
+DISTRIBUTION
+
+Any distribution of this software must include a copy of this license. You
+may not distribute the software under any other terms.
+
+NOTICES
+
+You must ensure that anyone who receives a copy of this software also receives
+a copy of this license.
+
+NO WARRANTY
+
+As far as the law allows, the software comes as is, without any warranty or
+condition, and the licensor will not be liable to you for any damages arising
+out of these terms or the use or nature of the software, under any kind of
+legal claim.
+
+VIOLATIONS
+
+The first time you are notified in writing that you have violated any of these
+terms, your licenses can nonetheless continue if you come into full compliance
+within 32 days of receiving notice. Otherwise, all your licenses end
+immediately.
+
+DEFINITIONS
+
+"Automated system" means any software, script, agent, or process that operates
+without direct, real-time human control for each individual action taken using
+this software.
+
+"AI agent" means any system using machine learning, large language models, or
+similar techniques to autonomously decide when and how to invoke this software.
+
+"Commercial entity" means any individual, company, partnership, or other
+organization that operates for profit or uses the software to generate
+commercial value.

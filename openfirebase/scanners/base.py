@@ -36,6 +36,11 @@ from ..core.config import (
 class BaseScanner(ABC):
     """Abstract base class for all Firebase scanners."""
 
+    # Subclasses must set these class attributes
+    resource_type: str = "database"  # e.g. "database", "storage", "config", "firestore", "cloud_functions"
+    display_name: str = "FIREBASE REALTIME DATABASE"  # Used in headers
+    resource_word: str = "databases"  # Used in summary warnings (e.g. "3 public databases found!")
+
     def __init__(
         self,
         timeout: int = DEFAULT_TIMEOUT,
@@ -210,8 +215,12 @@ class BaseScanner(ABC):
                     or response.status_code in [401, 403]
                 )
                 if should_try_auth:
-                    # Determine operation type based on HTTP method
-                    operation_type = "write" if method.upper() in ["POST", "PUT", "DELETE"] else "read"
+                    # Determine operation type based on HTTP method.
+                    # Cloud Functions scanning is read-only even though callable probing uses POST.
+                    if "cloudfunctions.net" in url:
+                        operation_type = "read"
+                    else:
+                        operation_type = "write" if method.upper() in ["POST", "PUT", "DELETE"] else "read"
                     # Try to get or create auth token for this project
                     auth_response = self._try_authenticated_request(
                         url, method, operation_type=operation_type, timeout=self.timeout, **request_kwargs
@@ -288,6 +297,13 @@ class BaseScanner(ABC):
         storage_app_match = re.search(r"/b/([^/]+)\.firebasestorage\.app/", url)
         if storage_app_match:
             return storage_app_match.group(1)
+
+        # Cloud Functions patterns
+        if "cloudfunctions.net" in url:
+            from .cloud_functions_scanner import _extract_project_id_from_cf_url
+            cf_result = _extract_project_id_from_cf_url(url)
+            if cf_result:
+                return cf_result
 
         return None
 
@@ -408,8 +424,28 @@ class BaseScanner(ABC):
                 auth_result["message"] = "Permission denied (even with auth)"
                 auth_result["security"] = "PROTECTED"
             elif response.status_code == 404:
-                auth_result["message"] = "Resource not found"
-                auth_result["security"] = "NOT_FOUND"
+                # For Cloud Functions, distinguish GCP front-door 404 (no function
+                # deployed) from a 404 returned by the function's own handler.
+                if (
+                    "cloudfunctions.net" in url
+                    and "<title>404 Page not found</title>" not in (response.text or "")
+                ):
+                    auth_result["message"] = "Public access (function reachable — handler returned 404 with auth)"
+                    auth_result["security"] = "PUBLIC"
+                    if operation_type == "write":
+                        self.write_auth_success_urls.add(url)
+                    else:
+                        self.read_auth_success_urls.add(url)
+                else:
+                    auth_result["message"] = "Resource not found"
+                    auth_result["security"] = "NOT_FOUND"
+            elif response.status_code in (400, 405, 415, 500) and "cloudfunctions.net" in url:
+                auth_result["message"] = "Public access (function reachable — returned error with auth)"
+                auth_result["security"] = "PUBLIC"
+                if operation_type == "write":
+                    self.write_auth_success_urls.add(url)
+                else:
+                    self.read_auth_success_urls.add(url)
             else:
                 auth_result["message"] = f"HTTP {response.status_code}"
                 auth_result["security"] = "UNKNOWN"
@@ -458,7 +494,7 @@ class BaseScanner(ABC):
         self.read_auth_success_urls.clear()
         self.write_auth_success_urls.clear()
 
-    def _display_and_clear_authenticated_results(self, scan_results, scan_type="DATABASES"):
+    def _display_and_clear_authenticated_results(self, scan_results):
         """Display authenticated results in separate section with proper header and clear them."""
         if not self.all_authenticated_results:
             return
@@ -467,7 +503,6 @@ class BaseScanner(ABC):
         has_relevant_auth_results = False
         for project_id, auth_results in self.all_authenticated_results.items():
             for url, auth_result in auth_results.items():
-                # Only show authenticated results for URLs that were tested in scan_results
                 for proj_results in scan_results.values():
                     if url in proj_results:
                         has_relevant_auth_results = True
@@ -480,19 +515,7 @@ class BaseScanner(ABC):
         if not has_relevant_auth_results:
             return
 
-        # Map scan types to display names for authenticated results
-        auth_type_mapping = {
-            "DATABASES": "FIREBASE REALTIME DATABASE READ RESULTS",
-            "DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE RESULTS",
-            "STORAGE": "FIREBASE STORAGE READ RESULTS",
-            "STORAGE WRITE": "FIREBASE STORAGE WRITE RESULTS",
-            "CONFIG": "FIREBASE REMOTE CONFIG READ RESULTS",
-            "FIRESTORE": "FIREBASE FIRESTORE READ RESULTS",
-            "FIRESTORE WRITE": "FIREBASE FIRESTORE WRITE RESULTS"
-        }
-
-        base_display_name = auth_type_mapping.get(scan_type, f"FIREBASE {scan_type} RESULTS")
-        auth_display_name = f"{GREEN}[AUTH]{RESET} {ORANGE}{base_display_name}{RESET}"
+        auth_display_name = f"{GREEN}[AUTH]{RESET} {ORANGE}{self.display_name} READ RESULTS{RESET}"
         print("\n" + "=" * 80)
         print(auth_display_name)
         print("=" * 80)
@@ -556,6 +579,9 @@ class BaseScanner(ABC):
                         elif "firebaseremoteconfig" in url.lower():
                             print(f"  {LIME}[+]{RESET} PUBLIC REMOTE CONFIG: {url}")
                             print(f"     Status: {status} - Remote Config is publicly accessible for any authenticated user")
+                        elif "cloudfunctions.net" in url.lower():
+                            print(f"  {LIME}[+]{RESET} PUBLIC FUNCTION: {url}")
+                            print(f"     Status: {status} - Cloud Function is accessible for any authenticated user")
                         else:
                             print(f"  {LIME}[+]{RESET} PUBLIC DATABASE: {url}")
                             print(f"     Status: {status} - Database is publicly accessible for any authenticated user")
@@ -565,6 +591,9 @@ class BaseScanner(ABC):
                     elif status == "404":
                         print(f"  {RED}[-]{RESET} NOT FOUND: {url}")
                         print(f"     Status: {status} - {message}")
+                    elif status in ["400", "405", "500"] and "cloudfunctions.net" in url.lower():
+                        print(f"  {LIME}[+]{RESET} PUBLIC FUNCTION: {url}")
+                        print(f"     Status: {status} - Cloud Function reachable (returned error — missing parameters or internal error)")
                     else:
                         print(f"  {GREY}[UNK]{RESET} UNKNOWN: {url}")
                         print(f"     Status: {status} - {message}")
@@ -589,7 +618,7 @@ class BaseScanner(ABC):
 
                     # Show response content if available
                     if auth_result.get("response_content"):
-                        print(f"Content: {auth_result['response_content']}\n")  # Add newline after content for better readability
+                        print(f"Content: {auth_result['response_content']}")
 
                     # Add status-specific messages for authenticated results
                     if status == "200":
@@ -600,23 +629,21 @@ class BaseScanner(ABC):
                                 import json
                                 content_json = json.loads(response_content) if response_content else {}
                                 if content_json == {} or content_json.get("documents") == []:
-                                    # Empty collection - show database accessible but collection doesn't exist
-                                    print(f"{YELLOW}[!]{RESET} PUBLIC FIRESTORE DATABASE (AUTHENTICATED) - Database is publicly accessible with authentication, but this collection doesn't exist (use --fuzz-collections)\n")
+                                    print(f"\n{YELLOW}[!]{RESET} PUBLIC FIRESTORE DATABASE (AUTHENTICATED) - Database is publicly accessible with authentication, but this collection doesn't exist (use --fuzz-collections)\n")
                                 else:
-                                    # Collection has content
-                                    print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n") 
+                                    print(f"\n{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
                             except (json.JSONDecodeError, ValueError):
-                                # If we can't parse JSON, fall back to generic message
-                                print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
+                                print(f"\n{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
                         else:
-                            # Non-Firestore services
-                            print(f"{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
+                            print(f"\n{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
+                    elif status in ["400", "405", "500"] and "cloudfunctions.net" in url:
+                        print(f"\n{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Cloud Function reachable (returned error — missing parameters or internal error)\n")
                     elif status in ["401", "403"]:
-                        print(f"{RED}[-]{RESET} STILL PROTECTED - Resource remains protected even with authentication")
+                        print(f"\n{RED}[-]{RESET} STILL PROTECTED - Resource remains protected even with authentication\n")
                     elif status == "404":
-                        print(f"{RED}[-]{RESET} NOT FOUND - Resource not found")
+                        print(f"\n{RED}[-]{RESET} NOT FOUND - Resource not found\n")
                     else:
-                        print(f"{YELLOW}[?]{RESET} UNKNOWN - Unexpected response: {status}\n")
+                        print(f"\n{YELLOW}[?]{RESET} UNKNOWN - Unexpected response: {status}\n")
 
     def _get_status_message(
         self,
@@ -624,17 +651,18 @@ class BaseScanner(ABC):
         security: str,
         message: str,
         result: Dict[str, str],
-        resource_type: str = "database",
         colorize: bool = True,
     ) -> str:
         """Get the appropriate status message for display.
+
+        Subclasses override this to provide resource-specific messages.
+        The base implementation handles database results.
 
         Args:
             status: HTTP status code
             security: Security classification
             message: Base message
             result: Full result dictionary
-            resource_type: Type of resource ("database", "storage", "config", or "firestore")
             colorize: Whether to include ANSI color codes (True for console, False for files)
 
         Returns:
@@ -646,84 +674,9 @@ class BaseScanner(ABC):
             from ..core.config import RED, GREEN, LIME, YELLOW, GREY, GOLD, BLUE, RESET
         else:
             RED = GREEN = LIME = YELLOW = GREY = GOLD = BLUE = RESET = ""
-        
-        if resource_type == "storage":
-            # Storage-specific messages.
-            # Firebase Storage and the underlying GCS bucket are governed by
-            # different access systems, so always tell the user which one
-            # the result came from.
-            surface = result.get("surface") if isinstance(result, dict) else None
-            surface_tag = f" [{surface}]" if surface else ""
-            if status == STATUS_OK:
-                if "write access allowed" in message or "upload successful" in message:
-                    return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED{surface_tag} - This storage bucket allows file uploads!"
-                return f"{LIME}[+]{RESET} PUBLIC STORAGE{surface_tag} - This storage bucket is publicly accessible!"
-            if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
-                if (
-                    "WRITE_FORBIDDEN" in security
-                    or "AUTH_REQUIRED" in security
-                    or "WRITE_DENIED" in security
-                ):
-                    return f"{RED}[-]{RESET} WRITE DENIED{surface_tag} - Storage bucket requires authentication for write access"
-                return f"{RED}[-]{RESET} PERMISSION DENIED{surface_tag} - Storage bucket is protected"
-            if status == STATUS_PRECONDITION_FAILED:
-                if "WRITE_PRECONDITION_FAILED" in security:
-                    return f"{RED}[-]{RESET} WRITE PRECONDITION FAILED - Storage bucket write requirements not met"
-                return f"{RED}[-]{RESET} PERMISSION ERROR - Service account missing permissions"
-            if status == STATUS_BAD_REQUEST:
-                if "RULES_VERSION_ERROR" in security:
-                    return f"{RED}[-]{RESET} RULES VERSION ERROR - Storage rules version 1 - listing disallowed"
-                if "INVALID_NAME" in security:
-                    return f"{YELLOW}[!]{RESET}  INVALID FILE NAME - File name format not accepted"
-                if "WRITE_DENIED" in security:
-                    return (
-                        f"{RED}[-]{RESET} WRITE DENIED - Storage bucket does not allow write access"
-                    )
-                return f"{YELLOW}[!]{RESET}  WARNING - {message}"
-            if status == STATUS_TOO_MANY_REQUESTS:
-                return f"{YELLOW}[!]{RESET}  WARNING - {message}"
-            if status == STATUS_LOCKED:
-                return f"{GOLD}[*]{RESET} LOCKED - Storage bucket is locked/deactivated"
-            if status == STATUS_NOT_FOUND:
-                return f"{RED}[-]{RESET} NOT FOUND - Storage bucket not found"
-            return f"{GREY}[UNK]{RESET} UNKNOWN - {message}"
-        if resource_type == "config":
-            # Remote Config-specific messages
-            # Check security cases first before status codes
-            if security == "MISSING_CONFIG":
-                return f"{RED}[-]{RESET} MISSING CONFIG - API key or App ID not found in APK"
-            if security == "NO_CONFIG":
-                return f"{GREY}[UNK]{RESET} NO REMOTE CONFIG - App doesn't use Firebase Remote Config"
-            if status == STATUS_OK:
-                return f"{LIME}[+]{RESET} PUBLIC CONFIG - Remote Config is accessible! Manually check the config for secrets!"
-            if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
-                return f"{RED}[-]{RESET} PERMISSION DENIED - Remote Config is protected"
-            if status == STATUS_BAD_REQUEST or status == STATUS_TOO_MANY_REQUESTS:
-                return f"{YELLOW}[!]{RESET}  WARNING - {message}"
-            if status == STATUS_NOT_FOUND:
-                return f"{RED}[-]{RESET} NOT FOUND - Remote Config not found"
-            return f"{GREY}[UNK]{RESET} UNKNOWN - {message}"
-        if resource_type == "firestore":
-            # Firestore-specific messages
-            if security == "DATASTORE_MODE":
-                return f"{GREY}[UNK]{RESET} DATASTORE MODE - Firestore database is in Datastore Mode (empty/unused)"
-            if status == STATUS_OK:
-                # Check if this is a write operation by looking at the message
-                if "write access allowed" in message.lower():
-                    return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED - This firestore allows unauthenticated writing to the database."
-                if security == "PUBLIC":
-                    return f"{LIME}[+]{RESET} PUBLIC FIRESTORE - This Firestore collection is publicly accessible with data!"
-                if security == "PUBLIC_DB_NONEXISTENT_COLLECTION":
-                    return f"{YELLOW}[!]{RESET}  PUBLIC FIRESTORE DATABASE - Database is publicly accessible, but this collection doesn't exist (use --fuzz-collections)"
-                return f"{LIME}[+]{RESET} ACCESSIBLE FIRESTORE - Firestore collection is accessible"
-            if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
-                return f"{RED}[-]{RESET} PERMISSION DENIED - Firestore collection is protected or project doesn't exist"
-            if status == STATUS_BAD_REQUEST or status == STATUS_TOO_MANY_REQUESTS:
-                return f"{YELLOW}[!]{RESET}  WARNING - {message}"
-            return f"{GREY}[UNK]{RESET} UNKNOWN - {message}"
+
         # Database-specific messages (default)
         if status == STATUS_OK:
-            # Check if this is a write operation by looking at the message
             if "write access allowed" in message.lower() or "data written successfully" in message.lower():
                 return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED - This database allows unauthenticated write access!"
             return f"{LIME}[+]{RESET} PUBLIC DATABASE - This database is publicly accessible!"
@@ -791,9 +744,8 @@ class BaseScanner(ABC):
                 print(f"Content: {result['response_content']}\n")  # Add newline after content for better readability
 
             # Add status-specific messages
-            resource_type = self._get_resource_type_from_url(url)
             status_message = self._get_status_message(
-                status, security, message, result, resource_type
+                status, security, message, result
             )
             print(status_message)
 
@@ -815,7 +767,7 @@ class BaseScanner(ABC):
 
                 # Add status-specific messages for authenticated results
                 auth_status_message = self._get_status_message(
-                    auth_status, auth_security, auth_message, auth_result, resource_type
+                    auth_status, auth_security, auth_message, auth_result
                 )
                 print(auth_status_message)
 
@@ -900,6 +852,8 @@ class BaseScanner(ABC):
             return "storage"
         if "firebaseremoteconfig.googleapis.com" in url:
             return "config"
+        if "cloudfunctions.net" in url:
+            return "cloud_functions"
         return "database"
 
     @staticmethod
@@ -916,212 +870,79 @@ class BaseScanner(ABC):
             return "GCS IAM"
         return ""
 
+    def _is_result_public(self, status: str, security: str) -> bool:
+        """Determine if a scan result represents a publicly accessible resource.
+
+        Subclasses override this for resource-specific logic (e.g. cloud functions
+        treat 400 responses with security="PUBLIC" as public).
+
+        Args:
+            status: HTTP status code string
+            security: Security classification string
+
+        Returns:
+            True if the result should be counted as public/accessible
+
+        """
+        return status == STATUS_OK and security not in ["NO_CONFIG"]
+
     def _count_scan_results(
-        self, scan_results: Dict[str, Dict[str, str]], resource_type: str = "database"
+        self, scan_results: Dict[str, Dict[str, str]],
     ) -> Dict[str, int]:
         """Count scan results by category.
-        
-        For databases: Count individual URLs to show all different statuses found
-        For other resources: Count per project ID (legacy behavior)
+
+        Counts individual URLs. Subclasses can override for different counting behavior.
 
         Args:
             scan_results: Dictionary mapping project IDs to their scan results
-            resource_type: Type of resource ("database", "storage", "config", or "firestore")
 
         Returns:
             Dictionary with counts for each category
 
         """
-        from ..core.config import (
-            STATUS_BAD_REQUEST,
-            STATUS_FORBIDDEN,
-            STATUS_LOCKED,
-            STATUS_NOT_FOUND,
-            STATUS_OK,
-            STATUS_PRECONDITION_FAILED,
-            STATUS_TOO_MANY_REQUESTS,
-            STATUS_UNAUTHORIZED,
-        )
-
         counts = {
             "total_projects": len(scan_results),
             "public_count": 0,
             "protected_count": 0,
             "not_found_count": 0,
-            "no_listing_count": 0,
             "locked_count": 0,
             "rate_limited_count": 0,
-            "missing_config_count": 0,
-            "no_config_count": 0,
-            "datastore_mode_count": 0,
             "other_count": 0,
-            "total_open_collections_count": 0,  # For Firestore: count individual open collections
         }
 
-        if resource_type == "database":
-            # For databases: Count individual URLs to show all different statuses found
-            for project_id, results in scan_results.items():
-                for url, result in results.items():
-                    status = result["status"]
-                    security = result["security"]
+        for project_id, results in scan_results.items():
+            for url, result in results.items():
+                status = result["status"]
+                security = result["security"]
 
-                    # Skip region redirects (404 with REGION_REDIRECT) as they're not actual databases
-                    if status == STATUS_NOT_FOUND and security == "REGION_REDIRECT":
-                        continue
+                # Skip region redirects (404 with REGION_REDIRECT) as they're not actual databases
+                if status == STATUS_NOT_FOUND and security == "REGION_REDIRECT":
+                    continue
 
-                    if status == STATUS_OK and security not in ["NO_CONFIG"]:
-                        counts["public_count"] += 1
-                    elif status == STATUS_UNAUTHORIZED:
-                        counts["protected_count"] += 1
-                    elif status == STATUS_NOT_FOUND:
-                        counts["not_found_count"] += 1
-                    elif status == STATUS_LOCKED:
-                        counts["locked_count"] += 1
-                    elif status == STATUS_TOO_MANY_REQUESTS:
-                        counts["rate_limited_count"] += 1
-                    else:
-                        counts["other_count"] += 1
-        else:
-            # For non-database resources: Count per project ID using prioritization (legacy behavior)
-            for project_id, results in scan_results.items():
-                # Determine the overall status for this project ID based on all URLs tested
-                has_public = False
-                has_protected = False
-                has_not_found = False
-                has_locked = False
-                has_rate_limited = False
-                has_missing_config = False
-                has_no_config = False
-                has_datastore_mode = False
-                has_no_listing = False
-                has_other = False
-
-                for url, result in results.items():
-                    status = result["status"]
-                    security = result["security"]
-
-                    if status == STATUS_OK and security not in ["NO_CONFIG"]:
-                        has_public = True
-                        # PUBLIC_AUTH also counts as publicly accessible (just requires auth)
-                    elif security == "NO_CONFIG":
-                        has_no_config = True
-                    elif security == "MISSING_CONFIG":
-                        has_missing_config = True
-                    elif security == "DATASTORE_MODE":
-                        has_datastore_mode = True
-                    elif resource_type == "firestore":
-                        # For Firestore, 403 means protected or invalid project
-                        if status == STATUS_FORBIDDEN or status == STATUS_UNAUTHORIZED:
-                            has_protected = True
-                        # Handle publicly accessible database with non-existent collection (only if truly public, not auth-only)
-                        elif (
-                            status == STATUS_OK
-                            and security == "PUBLIC_DB_NONEXISTENT_COLLECTION"
-                        ):
-                            has_public = (
-                                True  # Database is publicly accessible (security concern)
-                            )
-
-                    # Count individual open collections for Firestore
-                    if (
-                        resource_type == "firestore"
-                        and status == STATUS_OK
-                        and security in ["PUBLIC", "PUBLIC_AUTH", "PUBLIC_SA"]
-                    ):
-                        counts["total_open_collections_count"] += 1
-                    elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
-                        # For storage and config, 401 and 403 are considered protected
-                        has_protected = True
-                    elif status == STATUS_PRECONDITION_FAILED:
-                        if resource_type == "storage":
-                            # 412 for storage means bucket doesn't allow listing files, not protected
-                            has_no_listing = True
-                        else:
-                            # 412 is protected for config and other resources
-                            has_protected = True
-                    elif status == STATUS_BAD_REQUEST:
-                        if "RULES_VERSION_ERROR" in security:
-                            has_protected = True
-                        else:
-                            has_other = True
-                    elif status == STATUS_NOT_FOUND:
-                        if resource_type == "config":
-                            has_other = (
-                                True  # 404 is not typical for Firebase Remote Config
-                            )
-                        else:
-                            has_not_found = True  # For storage
-                    elif status == STATUS_LOCKED:
-                        has_other = True  # For storage/config, 423 is unusual
-                    elif status == STATUS_TOO_MANY_REQUESTS:
-                        has_rate_limited = True
-                    else:
-                        has_other = True
-
-                # Count this project ID based on priority (most significant status wins)
-                if has_public:
+                if self._is_result_public(status, security):
                     counts["public_count"] += 1
-                elif has_protected:
+                elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
                     counts["protected_count"] += 1
-                elif has_no_listing:
-                    counts["no_listing_count"] += 1
-                elif has_rate_limited:
-                    counts["rate_limited_count"] += 1
-                elif has_locked:
-                    counts["locked_count"] += 1
-                elif has_not_found:
+                elif status == STATUS_NOT_FOUND:
                     counts["not_found_count"] += 1
-                elif has_missing_config:
-                    counts["missing_config_count"] += 1
-                elif has_no_config:
-                    counts["no_config_count"] += 1
-                elif has_datastore_mode:
-                    counts["datastore_mode_count"] += 1
-                elif has_other:
+                elif status == STATUS_LOCKED:
+                    counts["locked_count"] += 1
+                elif status == STATUS_TOO_MANY_REQUESTS:
+                    counts["rate_limited_count"] += 1
+                else:
                     counts["other_count"] += 1
 
         return counts
 
-    def _get_summary_labels(self, resource_type: str = "database") -> Dict[str, str]:
+    def _get_summary_labels(self) -> Dict[str, str]:
         """Get resource-specific summary labels.
 
-        Args:
-            resource_type: Type of resource ("database", "storage", "config", or "firestore")
+        Subclasses override this to provide their own labels.
 
         Returns:
             Dictionary with summary labels
 
         """
-        if resource_type == "storage":
-            return {
-                "public": "Public storage buckets found",
-                "protected": "Protected storage buckets (401/403/400)",
-                "no_listing": "Storage does not allow listing files (412)",
-                "not_found": "Storage bucket not found (404)",
-                "rate_limited": "Rate limited (429)",
-                "other": "Other/errors",
-                "warning": "public storage bucket(s) found!",
-            }
-        if resource_type == "config":
-            return {
-                "public": "Remote configs found",
-                "protected": "Protected remote configs (401/403)",
-                "missing_config": "Missing config data",
-                "no_config": "Apps without Remote Config",
-                "rate_limited": "Rate limited (429)",
-                "other": "Other/errors",
-                "warning": "public remote config(s) found!",
-            }
-        if resource_type == "firestore":
-            return {
-                "public": "Projects with publicly accessible Firestore databases",
-                "protected": "Protected Firestore collections (403)",
-                "datastore_mode": "Projects in Datastore Mode (empty/unused)",
-                "rate_limited": "Rate limited (429)",
-                "other": "Other/errors",
-                "total_open_collections": "Total open collections found",
-                "warning": "publicly accessible Firestore database(s) found!",
-            }
         return {
             "public": "Public databases found",
             "protected": "Protected databases (401)",
@@ -1129,7 +950,6 @@ class BaseScanner(ABC):
             "locked": "Locked/deactivated (423)",
             "rate_limited": "Rate limited (429)",
             "other": "Other/errors",
-            "warning": "public database(s) found!",
         }
 
     def _write_scan_results_section(
@@ -1137,7 +957,6 @@ class BaseScanner(ABC):
         f,
         scan_results: Dict[str, Dict[str, str]],
         section_title: str,
-        resource_type: str = "database",
         project_to_packages: Dict[str, List[str]] = None,
         all_auth_results: Dict[str, Dict[str, Dict[str, str]]] = None,
     ):
@@ -1147,8 +966,8 @@ class BaseScanner(ABC):
             f: File handle to write to
             scan_results: Dictionary mapping project IDs to their scan results
             section_title: Title for this section
-            resource_type: Type of resource ("database", "storage", "config", "firestore")
             project_to_packages: Dictionary mapping project IDs to lists of package names
+            all_auth_results: Authenticated results by project_id
 
         """
         f.write(f"{section_title}\n")
@@ -1185,10 +1004,10 @@ class BaseScanner(ABC):
 
                 # Add status-specific messages
                 status_message = self._get_status_message(
-                    status, security, message, result, resource_type, colorize=False
+                    status, security, message, result, colorize=False
                 )
                 f.write(f"{status_message}\n")
-                
+
                 # Check if there's an authentication retry result for this URL
                 if all_auth_results and project_id in all_auth_results:
                     project_auth_results = all_auth_results[project_id]
@@ -1216,7 +1035,6 @@ class BaseScanner(ABC):
         self,
         all_results: Dict[str, Dict[str, str]],
         output_file: str,
-        resource_type: str = "database",
         package_project_ids: Dict[str, Set[str]] = None,
         print_warning: bool = True,
     ):
@@ -1242,8 +1060,8 @@ class BaseScanner(ABC):
                 status = result.get("status", "unknown")
                 security = result.get("security", "unknown")
 
-                # Consider it "open" if status is 200 and it's not a NO_CONFIG response
-                if status == STATUS_OK and security not in ["NO_CONFIG"]:
+                # Consider it "open" based on resource-specific logic
+                if self._is_result_public(status, security):
                     if project_id not in open_results:
                         open_results[project_id] = {}
                     open_results[project_id][url] = result
@@ -1286,25 +1104,19 @@ class BaseScanner(ABC):
         )
 
         with open(open_file, "w", encoding="utf-8") as f:
-            resource_title = resource_type.upper()
-            f.write(f"OPEN/PUBLIC {resource_title} RESULTS ONLY\n")
+            f.write(f"OPEN/PUBLIC {self.resource_type.upper()} RESULTS ONLY\n")
             f.write("=" * 80 + "\n")
             f.write(
-                f"Found {len(open_results)} open {resource_type}(s) with public access\n\n"
+                f"Found {len(open_results)} open {self.resource_word} with public access\n\n"
             )
 
             for project_id, results in open_results.items():
-                # Write project ID with package names if available
                 package_names = project_to_packages.get(project_id, [])
                 if package_names:
                     if len(package_names) == 1:
-                        f.write(
-                            f"Project ID: {project_id} (from package: {package_names[0]})\n"
-                        )
+                        f.write(f"Project ID: {project_id} (from package: {package_names[0]})\n")
                     else:
-                        f.write(
-                            f"Project ID: {project_id} (from packages: {', '.join(package_names)})\n"
-                        )
+                        f.write(f"Project ID: {project_id} (from packages: {', '.join(package_names)})\n")
                 else:
                     f.write(f"Project ID: {project_id}\n")
                 f.write("=" * 80 + "\n")
@@ -1322,7 +1134,7 @@ class BaseScanner(ABC):
                         f.write(f"Content: {result['response_content']}\n")
 
                     status_message = self._get_status_message(
-                        status, security, message, result, resource_type, colorize=False
+                        status, security, message, result, colorize=False
                     )
                     f.write(f"{status_message}\n")
                     f.write("\n")
@@ -1333,53 +1145,60 @@ class BaseScanner(ABC):
             f.write("\n" + "=" * 80 + "\n")
             f.write("SUMMARY OF OPEN/PUBLIC RESULTS\n")
             f.write("=" * 80 + "\n")
-            f.write(f"Total open {resource_type}s found: {len(open_results)}\n")
+            f.write(f"Total open {self.resource_word} found: {len(open_results)}\n")
             f.write(
                 f"Total open URLs found: {sum(len(results) for results in open_results.values())}\n"
             )
 
-            # List all open project IDs
-            f.write(f"\nOpen {resource_type} project IDs:\n")
+            f.write(f"\nOpen {self.resource_type} project IDs:\n")
             for project_id in sorted(open_results.keys()):
                 package_names = project_to_packages.get(project_id, [])
                 if package_names:
-                    f.write(
-                        f"- {project_id} (from packages: {', '.join(package_names)})\n"
-                    )
+                    f.write(f"- {project_id} (from packages: {', '.join(package_names)})\n")
                 else:
                     f.write(f"- {project_id}\n")
 
-        # For databases (read and write), count individual URLs; for other resources, count projects
-        if "database" in resource_type.lower():
-            total_open_urls = sum(len(results) for results in open_results.values())
-            warning_message = f"{YELLOW}[!]{RESET}  {total_open_urls} open {resource_type.lower()}(s) found! Details saved to {open_file}"
-        else:
-            warning_message = f"{YELLOW}[!]{RESET}  {len(open_results)} open {resource_type}(s) found! Details saved to {open_file}"
+        total_open = sum(len(results) for results in open_results.values())
+        warning_message = f"{YELLOW}[!]{RESET}  {total_open} open {self.resource_word} found! Details saved to {open_file}"
 
         if print_warning:
             print(warning_message)
             return None
         return warning_message
 
-    # Print methods for display and analysis (shared by all scanners)
-    def print_scan_results(
-        self, scan_results, scan_type="DATABASES", package_project_ids=None
-    ):
-        """Print scan results to console with color coding."""
-        # Map scan types to display names
-        type_mapping = {
-            "DATABASES": "FIREBASE REALTIME DATABASE READ RESULTS",
-            "DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE RESULTS",
-            "STORAGE": "FIREBASE STORAGE READ RESULTS",
-            "STORAGE WRITE": "FIREBASE STORAGE WRITE RESULTS",
-            "CONFIG": "FIREBASE REMOTE CONFIG READ RESULTS",
-            "FIRESTORE": "FIREBASE FIRESTORE READ RESULTS"
-        }
+    # Print methods for display and analysis
+    def _get_result_line_prefix(self, status: str, security: str, result: Dict[str, str]) -> str:
+        """Get the short prefix label for a result line in the summary view.
 
-        base_display_name = type_mapping.get(scan_type, f"FIREBASE {scan_type} RESULTS")
-        display_name = f"{RED}[UNAUTH]{RESET} {ORANGE}{base_display_name}{RESET}"
+        Uses _get_status_message to extract just the prefix (e.g. "[+] PUBLIC DATABASE").
+        Subclasses typically don't need to override this since _get_status_message handles it.
+
+        Returns:
+            Prefix string like "[+] PUBLIC DATABASE" for display before the URL.
+
+        """
+        status_msg = self._get_status_message(status, security, "", result)
+        # Extract everything before " - " (the prefix part)
+        if " - " in status_msg:
+            return status_msg.split(" - ")[0]
+        return status_msg
+
+    def print_scan_results(
+        self, scan_results, scan_type=None, package_project_ids=None,
+        include_summary=True,
+    ):
+        """Print scan results to console with color coding.
+
+        Args:
+            scan_results: Dictionary mapping project IDs to their scan results
+            scan_type: Scan type string (kept for backward compatibility, ignored — uses self.display_name)
+            package_project_ids: Dictionary mapping package names to sets of project IDs
+            include_summary: Whether to include the summary at the end (default True)
+
+        """
+        header = f"{RED}[UNAUTH]{RESET} {ORANGE}{self.display_name} READ RESULTS{RESET}"
         print("\n" + "=" * 80)
-        print(display_name)
+        print(header)
         print("=" * 80)
 
         # Create reverse mapping from project ID to package names
@@ -1396,13 +1215,9 @@ class BaseScanner(ABC):
             if project_to_packages and project_id in project_to_packages:
                 package_names = project_to_packages[project_id]
                 if len(package_names) == 1:
-                    print(
-                        f"\n{ORANGE}Project ID: {project_id} (from package: {package_names[0]}){RESET}"
-                    )
+                    print(f"\n{ORANGE}Project ID: {project_id} (from package: {package_names[0]}){RESET}")
                 else:
-                    print(
-                        f"\n{ORANGE}Project ID: {project_id} (from packages: {', '.join(package_names)}){RESET}"
-                    )
+                    print(f"\n{ORANGE}Project ID: {project_id} (from packages: {', '.join(package_names)}){RESET}")
             else:
                 print(f"\n{ORANGE}Project ID: {project_id}{RESET}")
             print("-" * 50)
@@ -1412,218 +1227,54 @@ class BaseScanner(ABC):
                 message = result["message"]
                 security = result["security"]
 
-                # Color coding based on status and security
-                # Special handling for remote config NO_CONFIG responses
-                if "firebaseremoteconfig" in url.lower() and security == "NO_CONFIG":
-                    print(f"  {GREY}[UNK]{RESET} NO REMOTE CONFIG: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_OK:
-                    if "storage" in url.lower():
-                        print(f"  {LIME}[+]{RESET} PUBLIC STORAGE: {url}")
-                    elif "firestore" in url.lower():
-                        if security == "PUBLIC_DB_NONEXISTENT_COLLECTION":
-                            print(f"  {YELLOW}[!]{RESET}  PUBLIC FIRESTORE DATABASE: {url}")
-                        else:
-                            print(f"  {LIME}[+]{RESET} PUBLIC FIRESTORE: {url}")
-                    elif "firebaseremoteconfig" in url.lower():
-                        print(f"  {LIME}[+]{RESET} PUBLIC REMOTE CONFIG: {url}")
-                    else:
-                        print(f"  {LIME}[+]{RESET} PUBLIC DATABASE: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif (
-                    status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]
-                    or status == STATUS_PRECONDITION_FAILED
-                ):
-                    print(f"  {RED}[-]{RESET} PROTECTED: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_BAD_REQUEST and "RULES_VERSION_ERROR" in security:
-                    print(f"  {RED}[-]{RESET} RULES VERSION ERROR: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_NOT_FOUND:
-                    if security == "REGION_REDIRECT":
-                        print(f"  {BLUE}[<->]{RESET} REGION REDIRECT: {url}")
-                    else:
-                        print(f"  {RED}[-]{RESET} NOT FOUND: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_LOCKED:
-                    print(f"  {GOLD}[*]{RESET} LOCKED: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_TOO_MANY_REQUESTS:
-                    print(f"  {YELLOW}[!]{RESET}  RATE LIMITED: {url}")
-                    print(f"     Status: {status} - {message}")
-                else:
-                    print(f"  {GREY}[UNK]{RESET} UNKNOWN: {url}")
-                    print(f"     Status: {status} - {message}")
+                prefix = self._get_result_line_prefix(status, security, result)
+                print(f"  {prefix}: {url}")
+                print(f"     Status: {status} - {message}")
 
         # Display authenticated results and clear them
-        self._display_and_clear_authenticated_results(scan_results, scan_type)
+        self._display_and_clear_authenticated_results(scan_results)
 
-        # Summary
-        print("\n" + "=" * 80)
-        # Print the summary (no output_dir available here, so will use default "./remote_config_results")
-        self.print_scan_summary(scan_results, scan_type)
+        if include_summary:
+            print("\n" + "=" * 80)
+            self.print_scan_summary(scan_results)
 
     def print_scan_details(
-        self, scan_results, scan_type="DATABASES", package_project_ids=None
+        self, scan_results, scan_type=None, package_project_ids=None
     ):
-        """Print only the detailed scan results to console (without summary)."""
-        # Map scan types to display names
-        type_mapping = {
-            "DATABASES": "FIREBASE REALTIME DATABASE READ RESULTS",
-            "DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE RESULTS",
-            "STORAGE": "FIREBASE STORAGE READ RESULTS",
-            "STORAGE WRITE": "FIREBASE STORAGE WRITE RESULTS",
-            "CONFIG": "FIREBASE REMOTE CONFIG READ RESULTS",
-            "FIRESTORE": "FIREBASE FIRESTORE READ RESULTS"
-        }
+        """Print only the detailed scan results to console (without summary).
 
-        base_display_name = type_mapping.get(scan_type, f"FIREBASE {scan_type} RESULTS")
-        display_name = f"{RED}[UNAUTH]{RESET} {ORANGE}{base_display_name}{RESET}"
-        print("\n" + "=" * 80)
-        print(display_name)
-        print("=" * 80)
+        This is an alias for print_scan_results with include_summary=False.
+        """
+        self.print_scan_results(
+            scan_results, scan_type, package_project_ids, include_summary=False
+        )
 
-        # Create reverse mapping from project ID to package names
-        project_to_packages = {}
-        if package_project_ids:
-            for package_name, pids in package_project_ids.items():
-                for pid in pids:
-                    if pid not in project_to_packages:
-                        project_to_packages[pid] = []
-                    project_to_packages[pid].append(package_name)
-
-        for project_id, results in scan_results.items():
-            # Display project ID with package names if available
-            if project_to_packages and project_id in project_to_packages:
-                package_names = project_to_packages[project_id]
-                if len(package_names) == 1:
-                    print(
-                        f"\n{ORANGE}Project ID: {project_id} (from package: {package_names[0]}){RESET}"
-                    )
-                else:
-                    print(
-                        f"\n{ORANGE}Project ID: {project_id} (from packages: {', '.join(package_names)}){RESET}"
-                    )
-            else:
-                print(f"\n{ORANGE}Project ID: {project_id}{RESET}")
-            print("-" * 50)
-
-            for url, result in results.items():
-                status = result["status"]
-                message = result["message"]
-                security = result["security"]
-
-                # Color coding based on status and security
-                # Special handling for remote config NO_CONFIG responses
-                if "firebaseremoteconfig" in url.lower() and security == "NO_CONFIG":
-                    print(f"  {GREY}[UNK]{RESET} NO REMOTE CONFIG: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_OK:
-                    if "storage" in url.lower():
-                        print(f"  {LIME}[+]{RESET} PUBLIC STORAGE: {url}")
-                    elif "firestore" in url.lower():
-                        if security == "PUBLIC_DB_NONEXISTENT_COLLECTION":
-                            print(f"  {YELLOW}[!]{RESET}  PUBLIC FIRESTORE DATABASE: {url}")
-                        else:
-                            print(f"  {LIME}[+]{RESET} PUBLIC FIRESTORE: {url}")
-                    elif "firebaseremoteconfig" in url.lower():
-                        print(f"  {LIME}[+]{RESET} PUBLIC REMOTE CONFIG: {url}")
-                    else:
-                        print(f"  {LIME}[+]{RESET} PUBLIC DATABASE: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif (
-                    status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]
-                    or status == STATUS_PRECONDITION_FAILED
-                ):
-                    print(f"  {RED}[-]{RESET} PROTECTED: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_BAD_REQUEST and "RULES_VERSION_ERROR" in security:
-                    print(f"  {RED}[-]{RESET} RULES VERSION ERROR: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_NOT_FOUND:
-                    if security == "REGION_REDIRECT":
-                        print(f"  {BLUE}[<->]{RESET} REGION REDIRECT: {url}")
-                    else:
-                        print(f"  {RED}[-]{RESET} NOT FOUND: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_LOCKED:
-                    print(f"  {GOLD}[*]{RESET} LOCKED: {url}")
-                    print(f"     Status: {status} - {message}")
-                elif status == STATUS_TOO_MANY_REQUESTS:
-                    print(f"  {YELLOW}[!]{RESET}  RATE LIMITED: {url}")
-                    print(f"     Status: {status} - {message}")
-                else:
-                    print(f"  {GREY}[UNK]{RESET} UNKNOWN: {url}")
-                    print(f"     Status: {status} - {message}")
-
-        # Display authenticated results and clear them
-        self._display_and_clear_authenticated_results(scan_results, scan_type)
-
-    def print_scan_summary(self, scan_results, scan_type="DATABASES", output_dir=None):
+    def print_scan_summary(self, scan_results, scan_type=None, output_dir=None):
         """Print only the scan summary (counts and totals) to console."""
-        # Map scan types to display names
-        type_mapping = {
-            "DATABASES": "FIREBASE REALTIME DATABASE READ",
-            "STORAGE": "FIREBASE STORAGE READ",
-            "STORAGE WRITE": "FIREBASE STORAGE WRITE",
-            "CONFIG": "FIREBASE REMOTE CONFIG READ",
-            "FIRESTORE": "FIREBASE FIRESTORE READ",
-            "FIRESTORE WRITE": "FIREBASE FIRESTORE WRITE",
-            "REALTIME DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE"
-        }
-
-        display_name = type_mapping.get(scan_type, scan_type)
-        print(f"{RED}[UNAUTH]{RESET} {ORANGE}SCAN SUMMARY {display_name}{RESET}")
+        print(f"{RED}[UNAUTH]{RESET} {ORANGE}SCAN SUMMARY {self.display_name} READ{RESET}")
         print("=" * 80)
 
-        if "STORAGE" in scan_type:
-            resource_type = "storage"
-        elif "CONFIG" in scan_type:
-            resource_type = "config"
-        elif "FIRESTORE" in scan_type:
-            resource_type = "firestore"
-        else:
-            resource_type = "database"
-        counts = self._count_scan_results(scan_results, resource_type)
-        labels = self._get_summary_labels(resource_type)
+        counts = self._count_scan_results(scan_results)
+        labels = self._get_summary_labels()
 
         print(f"Total projects scanned: {counts['total_projects']}")
         print(f"{labels['public']}: {counts['public_count']}")
         print(f"{labels['protected']}: {counts['protected_count']}")
-        if resource_type not in [
-            "config",
-            "firestore",
-        ]:  # Config and Firestore don't have "not found" status
+        if "not_found" in labels:
             print(f"{labels['not_found']}: {counts['not_found_count']}")
-
-        # Add resource-specific counts
-        if resource_type == "config":
-            print(f"{labels['missing_config']}: {counts['missing_config_count']}")
-            print(f"{labels['no_config']}: {counts['no_config_count']}")
-        elif resource_type == "database":
+        if "locked" in labels:
             print(f"{labels['locked']}: {counts['locked_count']}")
-        elif resource_type == "storage":
-            print(f"{labels['no_listing']}: {counts['no_listing_count']}")
-        elif resource_type == "firestore":
-            print(
-                f"{labels['total_open_collections']}: {counts['total_open_collections_count']}"
-            )
+
+        # Print any extra resource-specific counts from subclass
+        self._print_extra_summary_counts(counts, labels)
 
         if counts["rate_limited_count"] > 0:
             print(f"{labels['rate_limited']}: {counts['rate_limited_count']}")
         print(f"{labels['other']}: {counts['other_count']}")
 
         if counts["public_count"] > 0:
-            if resource_type == "storage":
-                resource_word = "storage buckets"
-            elif resource_type == "config":
-                resource_word = "remote configs"
-            elif resource_type == "firestore":
-                resource_word = "Firestore databases"
-            else:
-                resource_word = "databases"
             print(
-                f"\n{YELLOW}[!]{RESET}  WARNING: {counts['public_count']} public {resource_word} found!"
+                f"\n{YELLOW}[!]{RESET}  WARNING: {counts['public_count']} public {self.resource_word} found!"
             )
 
             # Check if any results are auth-only accessible
@@ -1633,39 +1284,50 @@ class BaseScanner(ABC):
                 for result in project_results.values():
                     if result.get("security") in ["PUBLIC_AUTH", "PUBLIC_SA"]:
                         has_auth_only = True
-                    elif result.get("security") in ["PUBLIC", "PUBLIC_DB_NONEXISTENT_COLLECTION"]:
+                    elif result.get("security") in ["PUBLIC", "PUBLIC_DB_NONEXISTENT_COLLECTION", "SOURCE_LEAK"]:
                         has_no_auth = True
 
             if has_auth_only and not has_no_auth:
-                print(f"{YELLOW}[!]{RESET}  These {resource_word} are accessible with authentication.")
+                print(f"{YELLOW}[!]{RESET}  These {self.resource_word} are accessible with authentication.")
             elif has_auth_only and has_no_auth:
-                print(f"{YELLOW}[!]{RESET}  These {resource_word} are accessible (some without authentication, some require authentication).")
+                print(f"{YELLOW}[!]{RESET}  These {self.resource_word} are accessible (some without authentication, some require authentication).")
             else:
-                print(f"{YELLOW}[!]{RESET}  These {resource_word} are accessible without authentication.")
+                print(f"{YELLOW}[!]{RESET}  These {self.resource_word} are accessible without authentication.")
 
-            # Add trufflehog command for config scans
-            if resource_type == "config":
-                print(f"{YELLOW}[!]{RESET}  It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:")
-                print(f"{YELLOW}[!]{RESET}  trufflehog filesystem remote_config_results")
-                print(f"{YELLOW}[!]{RESET}  gitleaks dir remote_config_results -v")
+            # Hook for subclass-specific warnings (e.g. trufflehog for config)
+            self._print_extra_summary_warnings()
 
         print("=" * 80)
 
+    def _print_extra_summary_counts(self, counts: Dict[str, int], labels: Dict[str, str]):
+        """Hook for subclasses to print additional summary counts.
+
+        Called between the standard counts and the rate_limited/other counts.
+        """
+
+    def _print_extra_summary_warnings(self):
+        """Hook for subclasses to print additional warnings after the public count warning."""
+
     def save_combined_scan_results(
         self,
-        db_scan_results=None,
-        storage_scan_results=None,
-        config_scan_results=None,
-        firestore_scan_results=None,
-        storage_write_results=None,
-        rtdb_write_results=None,
-        firestore_write_results=None,
+        scan_sections,
         output_file=None,
         package_project_ids=None,
-        print_warnings=True,
         all_auth_results=None,
     ):
-        """Save combined scan results from multiple scanners."""
+        """Save combined scan results from multiple scanners.
+
+        Args:
+            scan_sections: List of (scanner, results, title) tuples where each scanner
+                renders its own results using its overridden display methods
+            output_file: Path to save results
+            package_project_ids: Dictionary mapping package names to sets of project IDs
+            all_auth_results: Authenticated results by project_id
+
+        Returns:
+            List of warning messages
+
+        """
         warning_messages = []
 
         with open(output_file, "w", encoding="utf-8") as f:
@@ -1679,195 +1341,55 @@ class BaseScanner(ABC):
                         project_to_packages[pid].append(package_name)
 
             # Determine what services were scanned for the header
-            services_scanned = []
-            if db_scan_results:
-                services_scanned.append("Realtime Database read")
-            if storage_scan_results:
-                services_scanned.append("Storage read")
-            if config_scan_results:
-                services_scanned.append("Remote Config read")
-            if firestore_scan_results:
-                services_scanned.append("Firestore read")
-            if storage_write_results:
-                services_scanned.append("Storage Write")
-            if firestore_write_results:
-                services_scanned.append("Firestore Write")
-            if rtdb_write_results:
-                services_scanned.append("Realtime Database write")
-
+            services_scanned = [title for _, _, title in scan_sections]
             header = f"Firebase Combined Scan Results ({' + '.join(services_scanned)})"
             f.write(header + "\n")
             f.write("=" * 80 + "\n\n")
 
-            # Database results
-            # Realtime Database results
-            if db_scan_results:
-                self._write_scan_results_section(
-                    f,
-                    db_scan_results,
-                    "REALTIME DATABASE READ RESULTS",
-                    "database",
-                    project_to_packages,
-                    all_auth_results,
+            # Write results and summaries for each section
+            for scanner, results, title in scan_sections:
+                scanner._write_scan_results_section(
+                    f, results, f"{title.upper()} RESULTS",
+                    project_to_packages, all_auth_results,
                 )
 
-            # Storage results
-            if storage_scan_results:
-                self._write_scan_results_section(
-                    f,
-                    storage_scan_results,
-                    "STORAGE READ RESULTS",
-                    "storage",
-                    project_to_packages,
-                    all_auth_results,
-                )
-
-            # Remote Config results
-            if config_scan_results:
-                self._write_scan_results_section(
-                    f,
-                    config_scan_results,
-                    "REMOTE CONFIG READ RESULTS",
-                    "config",
-                    project_to_packages,
-                    all_auth_results,
-                )
-
-            # Firestore results
-            if firestore_scan_results:
-                self._write_scan_results_section(
-                    f,
-                    firestore_scan_results,
-                    "FIRESTORE READ RESULTS",
-                    "firestore",
-                    project_to_packages,
-                    all_auth_results,
-                )
-
-            # Storage write results
-            if storage_write_results:
-                self._write_scan_results_section(
-                    f,
-                    storage_write_results,
-                    "FIREBASE STORAGE WRITE RESULTS",
-                    "storage",
-                    project_to_packages,
-                    all_auth_results,
-                )
-
-            # RTDB write results
-            if rtdb_write_results:
-                self._write_scan_results_section(
-                    f,
-                    rtdb_write_results,
-                    "FIREBASE REALTIME DATABASE WRITE RESULTS",
-                    "database",
-                    project_to_packages,
-                    all_auth_results,
-                )
-
-            # Firestore write results
-            if firestore_write_results:
-                self._write_scan_results_section(
-                    f,
-                    firestore_write_results,
-                    "FIRESTORE WRITE RESULTS",
-                    "firestore",
-                    project_to_packages,
-                    all_auth_results,
-                )
-
-            # Individual summaries (matches console output format)
-
-            # Helper function to write individual summary
-            def write_individual_summary(scan_results, scan_type, resource_type):
-                # Map scan types to display names (same as console output)
-                type_mapping = {
-                    "DATABASES": "FIREBASE REALTIME DATABASE READ",
-                    "STORAGE": "FIREBASE STORAGE READ", 
-                    "STORAGE WRITE": "FIREBASE STORAGE WRITE",
-                    "CONFIG": "REMOTE CONFIG",
-                    "FIRESTORE": "FIREBASE FIRESTORE READ",
-                    "FIRESTORE WRITE": "FIREBASE FIRESTORE WRITE",
-                    "REALTIME DATABASE WRITE": "FIREBASE REALTIME DATABASE WRITE"
-                }
-                
-                display_name = type_mapping.get(scan_type, scan_type)
+            # Write summaries
+            for scanner, results, title in scan_sections:
                 f.write("\n" + "=" * 80 + "\n")
-                f.write(f"[UNAUTH] SCAN SUMMARY {display_name}\n")
+                f.write(f"[UNAUTH] SCAN SUMMARY {title.upper()}\n")
                 f.write("=" * 80 + "\n")
-                
-                counts = self._count_scan_results(scan_results, resource_type)
-                labels = self._get_summary_labels(resource_type)
 
+                counts = scanner._count_scan_results(results)
+                labels = scanner._get_summary_labels()
 
                 f.write(f"Total projects scanned: {counts['total_projects']}\n")
                 f.write(f"{labels['public']}: {counts['public_count']}\n")
                 f.write(f"{labels['protected']}: {counts['protected_count']}\n")
-                
-                if resource_type not in ["config", "firestore"]:  # Config and Firestore don't have "not found" status
+                if "not_found" in labels:
                     f.write(f"{labels['not_found']}: {counts['not_found_count']}\n")
-                
-                # Add resource-specific counts
-                if resource_type == "config":
-                    f.write(f"{labels['missing_config']}: {counts['missing_config_count']}\n")
-                    f.write(f"{labels['no_config']}: {counts['no_config_count']}\n")
-                elif resource_type == "database":
+                if "locked" in labels:
                     f.write(f"{labels['locked']}: {counts['locked_count']}\n")
-                elif resource_type == "storage":
-                    f.write(f"{labels['no_listing']}: {counts['no_listing_count']}\n")
-                elif resource_type == "firestore":
-                    f.write(f"{labels['total_open_collections']}: {counts['total_open_collections_count']}\n")
-                
+
+                scanner._write_extra_summary_counts(f, counts, labels)
+
                 if counts["rate_limited_count"] > 0:
                     f.write(f"{labels['rate_limited']}: {counts['rate_limited_count']}\n")
                 f.write(f"{labels['other']}: {counts['other_count']}\n")
-                
-                # Add warnings for public resources
+
                 if counts["public_count"] > 0:
-                    if resource_type == "storage":
-                        resource_word = "storage buckets"
-                    elif resource_type == "config":
-                        resource_word = "remote configs"
-                    elif resource_type == "firestore":
-                        resource_word = "Firestore databases"
-                    else:
-                        resource_word = "databases"
-                    
-                    f.write(f"\n[!]  WARNING: {counts['public_count']} public {resource_word} found!\n")
-                    f.write(f"[!]  These {resource_word} are accessible without authentication.\n")
-                    
-                    # Add special message for config resources
-                    if resource_type == "config":
-                        f.write("[!]  It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:\n")
-                        f.write("[!]  trufflehog filesystem remote_config_results\n")  
-                        f.write("[!]  gitleaks dir remote_config_results -v\n")
-
-            # Write individual summaries for each scan type
-            if db_scan_results:
-                write_individual_summary(db_scan_results, "DATABASES", "database")
-
-            if storage_scan_results:
-                write_individual_summary(storage_scan_results, "STORAGE", "storage")
-
-            if config_scan_results:
-                write_individual_summary(config_scan_results, "CONFIG", "config")
-
-            if firestore_scan_results:
-                write_individual_summary(firestore_scan_results, "FIRESTORE", "firestore")
-
-            if storage_write_results:
-                write_individual_summary(storage_write_results, "STORAGE WRITE", "storage")
-
-            if rtdb_write_results:
-                write_individual_summary(rtdb_write_results, "REALTIME DATABASE WRITE", "database")
-
-            if firestore_write_results:
-                write_individual_summary(firestore_write_results, "FIRESTORE WRITE", "firestore")
+                    f.write(f"\n[!]  WARNING: {counts['public_count']} public {scanner.resource_word} found!\n")
+                    f.write(f"[!]  These {scanner.resource_word} are accessible without authentication.\n")
+                    scanner._write_extra_summary_warnings(f)
 
             f.write("\n")
 
         return warning_messages
+
+    def _write_extra_summary_counts(self, f, counts: Dict[str, int], labels: Dict[str, str]):
+        """Hook for subclasses to write additional summary counts to file."""
+
+    def _write_extra_summary_warnings(self, f):
+        """Hook for subclasses to write additional warnings to file."""
 
     @abstractmethod
     def scan_project_id(self, project_id: str) -> Dict[str, str]:

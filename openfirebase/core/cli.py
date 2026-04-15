@@ -100,6 +100,26 @@ def validate_credentials_usage(
             )
 
 
+def validate_functions_options(
+    read_functions: bool,
+    fuzz_functions: Optional[Path],
+    function_name: Optional[str],
+    project_id: Optional[str],
+    project_id_file: Optional[Path],
+    file: Optional[str],
+    apk_dir: Optional[str],
+    resume: Optional[Path]
+) -> None:
+    """Validate Cloud Functions scan requirements."""
+    is_apk_mode = file or apk_dir or resume
+    if read_functions and (project_id or project_id_file) and not is_apk_mode:
+        if not function_name and not fuzz_functions:
+            raise typer.BadParameter(
+                "--read-functions with --project-id or --project-id-file requires either "
+                "--function-name <name> or --fuzz-functions <wordlist>"
+            )
+
+
 def validate_fuzz_collections(fuzz_collections: Optional[Path]) -> None:
     """Validate fuzz collections requirements."""
     if fuzz_collections:
@@ -421,10 +441,34 @@ def main(
         help="Collection name(s) to test with --read-firestore (comma-separated for multiple, defaults to 'users')",
         rich_help_panel="Read Testing"
     ),
+    read_functions: bool = Option(
+        False,
+        "-rcf", "--read-functions",
+        help="Test Firebase Cloud Functions for unauthorized access",
+        rich_help_panel="Read Testing"
+    ),
+    function_name: Optional[str] = Option(
+        None,
+        "--function-name",
+        help="Cloud Function name(s) to test with --read-functions (comma-separated, requires --project-id)",
+        rich_help_panel="Read Testing"
+    ),
+    function_region: Optional[str] = Option(
+        None,
+        "--function-region",
+        help="Region for Cloud Functions testing (default: us-central1, comma-separated for multiple)",
+        rich_help_panel="Read Testing"
+    ),
+    fuzz_functions: Optional[Path] = Option(
+        None,
+        "--fuzz-functions",
+        help="Path to wordlist for Cloud Functions enumeration (probes GCS source buckets for region detection)",
+        rich_help_panel="Read Testing"
+    ),
     read_all: bool = Option(
         False,
         "-ra", "--read-all",
-        help="Read Firebase databases, storage buckets, Remote Config, and Firestore for unauthorized access",
+        help="Read Firebase databases, storage buckets, Remote Config, Firestore, and Cloud Functions for unauthorized access",
         rich_help_panel="Read Testing"
     ),
     scan_rate: float = Option(
@@ -603,6 +647,7 @@ def main(
     validated_resume_auth_file = validate_resume_auth_file_options(resume_auth_file, check_with_auth)
 
     validate_credentials_usage(app_id, api_key, project_id, project_id_file, read_config)
+    validate_functions_options(read_functions, fuzz_functions, function_name, project_id, project_id_file, file, apk_dir, resume)
     validate_fuzz_collections(fuzz_collections)
     validate_write_options(write_storage, write_firestore, write_rtdb, write_all)
     validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key, google_id_token)
@@ -629,6 +674,11 @@ def main(
     args.scan_config = read_config
     args.scan_firestore = read_firestore
     args.collection_name = collection_name
+    args.scan_cloud_functions = read_functions
+    args.function_name = function_name
+    args.function_region = function_region
+    args.fuzz_functions = fuzz_functions is not None
+    args.functions_wordlist = str(fuzz_functions) if fuzz_functions else None
     args.scan_all = read_all
     args.scan_rate = scan_rate
     args.fuzz_collections = str(fuzz_collections) if fuzz_collections else None
@@ -651,6 +701,32 @@ def main(
     args.referer = referer
     args.ios_bundle_id = ios_bundle_id
     args.proxy = proxy
+    if proxy:
+        from urllib.parse import urlparse
+        parsed = urlparse(proxy)
+        if not parsed.hostname or not parsed.port:
+            typer.echo(f"Error: Invalid proxy format '{proxy}'. Expected protocol://host:port (e.g., http://127.0.0.1:8080)", err=True)
+            raise typer.Exit(code=1)
+        try:
+            import requests
+            resp = requests.get(
+                "http://detectportal.firefox.com/success.txt",
+                proxies={"http": proxy, "https": proxy},
+                timeout=5,
+                verify=False,
+            )
+            reason = f"returned HTTP {resp.status_code}" if resp.status_code >= 500 else None
+        except requests.exceptions.ConnectTimeout:
+            reason = "connection timed out"
+        except requests.exceptions.ReadTimeout:
+            reason = "no response (read timeout) — port is open but not speaking HTTP proxy"
+        except requests.exceptions.ConnectionError:
+            reason = "connection refused"
+        except requests.exceptions.RequestException as e:
+            reason = str(e.__class__.__name__)
+        if reason:
+            typer.echo(f"Error: Proxy {parsed.hostname}:{parsed.port} not reachable ({reason}). Start your proxy (e.g., Burp) before running the scanner.", err=True)
+            raise typer.Exit(code=1)
     args.check_with_auth = check_with_auth
     args.email = email
     args.password = password

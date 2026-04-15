@@ -9,7 +9,7 @@
 <div align="center">
 
 [![GitHub stars](https://img.shields.io/github/stars/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/stargazers)
-[![License](https://img.shields.io/github/license/Icex0/OpenFirebase?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)](https://www.python.org)
 [![GitHub issues](https://img.shields.io/github/issues/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/issues)
 
@@ -476,6 +476,26 @@ When using the `--read-config` option, the script will scan Firebase Remote Conf
 </details>
 
 <details>
+<summary><strong>Firebase Cloud Functions Scanning</strong></summary>
+
+When using the `--read-functions` option, OpenFirebase probes Cloud Functions endpoints for unauthenticated access. Two trigger types are handled:
+
+- **HTTP triggers**: Extracted `https://REGION-PROJECT_ID.cloudfunctions.net/FUNCTION[/subpath]` URLs are probed with `GET` (preserving any captured subpath and static query parameters).
+- **Callable triggers**: Callable function names recovered via DEX bytecode walking of `FirebaseFunctions.getHttpsCallable("name")` calls are reconstructed as `https://REGION-PROJECT_ID.cloudfunctions.net/FUNCTION` and probed with `POST {"data": {}}` + `Content-Type: application/json` (the Firebase callable protocol). Each callable is tried against the default region (`us-central1`) plus any non-default regions recovered from `FirebaseFunctions.getInstance("region")` and 404s roll over to the next region.
+- Evaluates response status codes:
+  - **200**: Function reachable and returned a response — publicly invokable.
+  - **400 / 405 / 415 / 500**: Function reachable but rejected the payload/method/content-type or errored — still confirms public reach.
+  - **401/403**: Protected — requires authentication. Retried with `--check-with-auth` when enabled.
+  - **404**: Function does not exist at that URL/region.
+- **Fuzzing mode (`--fuzz-functions <wordlist>`)**: When a Google App ID is available, OpenFirebase first extracts the project number and probes the `gcf-v2-sources-<project_number>-<region>` GCS bucket across all known Cloud Functions regions. Regions whose source bucket returns 200/400/401/500 ("alive regions") are then brute-forced with the wordlist, avoiding wasted requests against regions where no functions are deployed. Results are deduplicated against already-known function names from extraction.
+- **Direct probing with `--project-id`**: `--function-name <names>` (comma-separated, callable protocol) and/or `--function-region <regions>` can be supplied; alternatively `--fuzz-functions <wordlist>` enables bucket-probe + enumeration. At least one of these is required when combining `--read-functions` with `--project-id` / `--project-id-file`.
+- **Region independence**: GCP treats each region as a fully independent deployment — the same function name can run different code in different regions. This means `us-central1/debug_info` and `europe-west1/debug_info` may behave differently, expose different data, or have different authentication configurations. Use `--function-region all` to probe all known regions (when using `--project-id` / `--project-id-file` mode).
+- **Wordlists**: The bundled `openfirebase/wordlist/cloud-functions.txt` uses the **top-250** list from [Icex0/firebase-wordlists](https://github.com/Icex0/firebase-wordlists) — callable function names ranked by distinct-repo frequency across real public Firebase projects. Larger lists (`top-500.txt`, `full.txt` with 6,683 names) are available in that repo if you want a wider enumeration surface; pass any of them via `--fuzz-functions <path>`.
+- **Burp / proxy caveat**: If you run OpenFirebase through Burp with `-x`, disable **upstream** HTTP/2 in Burp: **Settings → Network → HTTP → HTTP/2** and uncheck "Default to HTTP/2 if the server supports it" (older Burp: Project options → HTTP → uncheck "Enable HTTP/2"). Note this is **not** the "Support HTTP/2" toggle on the Proxy Listener — that one controls client-to-Burp HTTP/2, not Burp-to-target. Without this, Burp forwards Google's `HTTP/2` status line verbatim, which Python's HTTP/1.1 client can't parse (`UnknownProtocol('HTTP/2')`) — regions beyond the first get falsely flagged as dead.
+
+</details>
+
+<details>
 <summary><strong>Authenticated Scanning and Google API Restriction Bypass</strong></summary>
 
 When using the `--check-with-auth` option, OpenFirebase attempts to authenticate with Firebase services to access protected resources that return 401/403 errors during unauthenticated scanning:
@@ -587,7 +607,11 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--read-config` | `-rc` | Test Firebase Remote Config for read access |
 | `--read-firestore` | `-rf` | Test Firestore databases for unauthorized read access |
 | `--collection-name` | | Collection name(s) to test with --read-firestore (comma-separated for multiple, defaults to 'users') |
-| `--read-all` | `-ra` | Test Firebase databases, storage buckets, Remote Config, and Firestore for unauthorized access |
+| `--read-functions` | `-rcf` | Test Firebase Cloud Functions (HTTP + callable triggers) for unauthorized access |
+| `--function-name` | | Cloud Function name(s) to test with --read-functions (comma-separated, requires --project-id) |
+| `--function-region` | | Region(s) for Cloud Functions testing (default: us-central1, comma-separated for multiple) |
+| `--fuzz-functions` | | Path to wordlist for Cloud Functions enumeration (probes GCS source buckets for region detection) |
+| `--read-all` | `-ra` | Test Firebase databases, storage buckets, Remote Config, Firestore, and Cloud Functions for unauthorized access |
 | `--scan-rate` | `-l` | Rate limit for scanning (requests per second) |
 | `--fuzz-collections` | | Path to wordlist file for Firestore collection fuzzing when a publicly accessible database is found |
 

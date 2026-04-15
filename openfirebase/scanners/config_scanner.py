@@ -17,6 +17,106 @@ from .base import BaseScanner
 class ConfigScanner(BaseScanner):
     """Scans Firebase Remote Config to check accessibility and security status."""
 
+    resource_type = "config"
+    display_name = "FIREBASE REMOTE CONFIG"
+    resource_word = "remote configs"
+
+    def _get_status_message(self, status, security, message, result, colorize=True):
+        """Remote Config-specific status messages."""
+        from ..core.config import (
+            STATUS_BAD_REQUEST, STATUS_FORBIDDEN, STATUS_NOT_FOUND,
+            STATUS_OK, STATUS_TOO_MANY_REQUESTS, STATUS_UNAUTHORIZED,
+        )
+        if colorize:
+            from ..core.config import RED, LIME, YELLOW, GREY, RESET
+        else:
+            RED = LIME = YELLOW = GREY = RESET = ""
+
+        if security == "MISSING_CONFIG":
+            return f"{RED}[-]{RESET} MISSING CONFIG - API key or App ID not found in APK"
+        if security == "NO_CONFIG":
+            return f"{GREY}[UNK]{RESET} NO REMOTE CONFIG - App doesn't use Firebase Remote Config"
+        if status == STATUS_OK:
+            return f"{LIME}[+]{RESET} PUBLIC CONFIG - Remote Config is accessible! Manually check the config for secrets!"
+        if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
+            return f"{RED}[-]{RESET} PERMISSION DENIED - Remote Config is protected"
+        if status == STATUS_BAD_REQUEST or status == STATUS_TOO_MANY_REQUESTS:
+            return f"{YELLOW}[!]{RESET}  WARNING - {message}"
+        if status == STATUS_NOT_FOUND:
+            return f"{RED}[-]{RESET} NOT FOUND - Remote Config not found"
+        return f"{GREY}[UNK]{RESET} UNKNOWN - {message}"
+
+    def _get_summary_labels(self):
+        return {
+            "public": "Remote configs found",
+            "protected": "Protected remote configs (401/403)",
+            "missing_config": "Missing config data",
+            "no_config": "Apps without Remote Config",
+            "rate_limited": "Rate limited (429)",
+            "other": "Other/errors",
+        }
+
+    def _count_scan_results(self, scan_results):
+        """Config counts per project ID."""
+        from ..core.config import (
+            STATUS_BAD_REQUEST, STATUS_FORBIDDEN, STATUS_NOT_FOUND,
+            STATUS_OK, STATUS_TOO_MANY_REQUESTS, STATUS_UNAUTHORIZED,
+        )
+        counts = {
+            "total_projects": len(scan_results),
+            "public_count": 0, "protected_count": 0, "not_found_count": 0,
+            "locked_count": 0, "rate_limited_count": 0,
+            "missing_config_count": 0, "no_config_count": 0, "other_count": 0,
+        }
+        for project_id, results in scan_results.items():
+            has_public = has_protected = has_missing_config = has_no_config = False
+            has_rate_limited = has_other = False
+            for url, result in results.items():
+                status = result["status"]
+                security = result["security"]
+                if self._is_result_public(status, security):
+                    has_public = True
+                elif security == "NO_CONFIG":
+                    has_no_config = True
+                elif security == "MISSING_CONFIG":
+                    has_missing_config = True
+                elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
+                    has_protected = True
+                elif status == STATUS_TOO_MANY_REQUESTS:
+                    has_rate_limited = True
+                else:
+                    has_other = True
+            if has_public: counts["public_count"] += 1
+            elif has_protected: counts["protected_count"] += 1
+            elif has_rate_limited: counts["rate_limited_count"] += 1
+            elif has_missing_config: counts["missing_config_count"] += 1
+            elif has_no_config: counts["no_config_count"] += 1
+            elif has_other: counts["other_count"] += 1
+        return counts
+
+    def _print_extra_summary_counts(self, counts, labels):
+        if "missing_config" in labels:
+            print(f"{labels['missing_config']}: {counts.get('missing_config_count', 0)}")
+        if "no_config" in labels:
+            print(f"{labels['no_config']}: {counts.get('no_config_count', 0)}")
+
+    def _write_extra_summary_counts(self, f, counts, labels):
+        if "missing_config" in labels:
+            f.write(f"{labels['missing_config']}: {counts.get('missing_config_count', 0)}\n")
+        if "no_config" in labels:
+            f.write(f"{labels['no_config']}: {counts.get('no_config_count', 0)}\n")
+
+    def _print_extra_summary_warnings(self):
+        from ..core.config import YELLOW, RESET
+        print(f"{YELLOW}[!]{RESET}  It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:")
+        print(f"{YELLOW}[!]{RESET}  trufflehog filesystem remote_config_results")
+        print(f"{YELLOW}[!]{RESET}  gitleaks dir remote_config_results -v")
+
+    def _write_extra_summary_warnings(self, f):
+        f.write("[!]  It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:\n")
+        f.write("[!]  trufflehog filesystem remote_config_results\n")
+        f.write("[!]  gitleaks dir remote_config_results -v\n")
+
     def __init__(
         self,
         timeout: int = 10,
@@ -340,7 +440,21 @@ class ConfigScanner(BaseScanner):
                 f.write(f"Firebase {scan_type} Scan Results\n")
                 f.write("=" * 80 + "\n\n")
 
-        for project_id, project_config_data in sorted(config_data.items()):
+        ordered_project_ids = []
+        seen = set()
+        if package_project_ids:
+            for package_name, project_id_set in package_project_ids.items():
+                for pid in sorted(project_id_set):
+                    if pid in config_data and pid not in seen:
+                        ordered_project_ids.append(pid)
+                        seen.add(pid)
+        for pid in sorted(config_data.keys()):
+            if pid not in seen:
+                ordered_project_ids.append(pid)
+                seen.add(pid)
+
+        for project_id in ordered_project_ids:
+            project_config_data = config_data[project_id]
             # Check for shutdown request
             if is_shutdown_requested():
                 print(f"\n{RED}[X]{RESET} Shutdown requested. Stopping {scan_type.lower()} scan...")
@@ -368,7 +482,7 @@ class ConfigScanner(BaseScanner):
             
             # Create open-only results file (for single scans)
             self._save_open_only_results(
-                results, output_file, "config", package_project_ids
+                results, output_file, package_project_ids
             )
 
         return results
@@ -399,50 +513,33 @@ class ConfigScanner(BaseScanner):
                 if "response_content" in result:
                     f.write(f"Content: {result['response_content']}\n")
 
-                status_message = self._get_status_message(status, security, message, result, "config", colorize=False)
+                status_message = self._get_status_message(status, security, message, result, colorize=False)
                 f.write(f"{status_message}\n")
                 f.write("\n")
 
             f.write("\n")
 
-    def _save_final_summary_to_file(self, results: Dict[str, Dict[str, str]], output_file: str, resource_type: str):
+    def _save_final_summary_to_file(self, results: Dict[str, Dict[str, str]], output_file: str, _resource_type: str = None):
         """Save final summary to file."""
         with open(output_file, "a", encoding="utf-8") as f:
-            counts = self._count_scan_results(results, resource_type)
-            labels = self._get_summary_labels(resource_type)
+            counts = self._count_scan_results(results)
+            labels = self._get_summary_labels()
 
-            f.write("[UNAUTH] SCAN SUMMARY FIREBASE REMOTE CONFIG READ\n")
+            f.write(f"[UNAUTH] SCAN SUMMARY {self.display_name} READ\n")
             f.write("=" * 80 + "\n")
             f.write(f"Total projects scanned: {counts['total_projects']}\n")
             f.write(f"{labels['public']}: {counts['public_count']}\n")
             f.write(f"{labels['protected']}: {counts['protected_count']}\n")
-            if resource_type not in ["config", "firestore"]:  # Config and Firestore don't have "not found" status
-                f.write(f"{labels['not_found']}: {counts['not_found_count']}\n")
 
-            # Add resource-specific counts
-            if resource_type == "config":
-                f.write(f"{labels['missing_config']}: {counts['missing_config_count']}\n")
-                f.write(f"{labels['no_config']}: {counts['no_config_count']}\n")
-            elif resource_type == "database":
-                f.write(f"{labels['locked']}: {counts['locked_count']}\n")
+            self._write_extra_summary_counts(f, counts, labels)
 
             if counts["rate_limited_count"] > 0:
                 f.write(f"{labels['rate_limited']}: {counts['rate_limited_count']}\n")
             f.write(f"{labels['other']}: {counts['other_count']}\n")
 
             if counts["public_count"] > 0:
-                if resource_type == "storage":
-                    resource_word = "storage buckets"
-                elif resource_type == "config":
-                    resource_word = "remote configs"
-                elif resource_type == "firestore":
-                    resource_word = "Firestore databases"
-                else:
-                    resource_word = "databases"
-                f.write(f"\nWARNING: {counts['public_count']} public {resource_word} found!\n")
-                f.write(f"These {resource_word} are accessible without authentication.\n")
-                f.write("It is recommended to scan all configs for secrets with Gitleaks and Trufflehog using the following commands:\n")
-                f.write("trufflehog filesystem remote_config_results\n")
-                f.write("gitleaks dir remote_config_results -v\n")
+                f.write(f"\nWARNING: {counts['public_count']} public {self.resource_word} found!\n")
+                f.write(f"These {self.resource_word} are accessible without authentication.\n")
+                self._write_extra_summary_warnings(f)
 
 

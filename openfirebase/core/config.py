@@ -4,7 +4,7 @@ Centralized configuration for all constants and settings.
 """
 
 # Version information
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # ANSI color codes - Using 256-color mode for consistency across terminals
 GREEN = "\033[38;5;46m"  # Bright green for success

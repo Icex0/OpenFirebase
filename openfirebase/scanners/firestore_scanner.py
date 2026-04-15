@@ -15,6 +15,98 @@ from .base import BaseScanner
 class FirestoreScanner(BaseScanner):
     """Scans Firebase Firestore databases to check accessibility and security status."""
 
+    resource_type = "firestore"
+    display_name = "FIREBASE FIRESTORE"
+    resource_word = "Firestore databases"
+
+    def _get_status_message(self, status, security, message, result, colorize=True):
+        """Firestore-specific status messages."""
+        from ..core.config import (
+            STATUS_BAD_REQUEST, STATUS_FORBIDDEN, STATUS_OK,
+            STATUS_TOO_MANY_REQUESTS, STATUS_UNAUTHORIZED,
+        )
+        if colorize:
+            from ..core.config import RED, LIME, YELLOW, GREY, RESET
+        else:
+            RED = LIME = YELLOW = GREY = RESET = ""
+
+        if security == "DATASTORE_MODE":
+            return f"{GREY}[UNK]{RESET} DATASTORE MODE - Firestore database is in Datastore Mode (empty/unused)"
+        if status == STATUS_OK:
+            if "write access allowed" in message.lower():
+                return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED - This firestore allows unauthenticated writing to the database."
+            if security == "PUBLIC":
+                return f"{LIME}[+]{RESET} PUBLIC FIRESTORE - This Firestore collection is publicly accessible with data!"
+            if security == "PUBLIC_DB_NONEXISTENT_COLLECTION":
+                return f"{YELLOW}[!]{RESET}  PUBLIC FIRESTORE DATABASE - Database is publicly accessible, but this collection doesn't exist (use --fuzz-collections)"
+            return f"{LIME}[+]{RESET} ACCESSIBLE FIRESTORE - Firestore collection is accessible"
+        if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
+            return f"{RED}[-]{RESET} PERMISSION DENIED - Firestore collection is protected or project doesn't exist"
+        if status == STATUS_BAD_REQUEST or status == STATUS_TOO_MANY_REQUESTS:
+            return f"{YELLOW}[!]{RESET}  WARNING - {message}"
+        return f"{GREY}[UNK]{RESET} UNKNOWN - {message}"
+
+    def _is_result_public(self, status, security):
+        from ..core.config import STATUS_OK
+        return status == STATUS_OK and security not in ["NO_CONFIG"]
+
+    def _get_summary_labels(self):
+        return {
+            "public": "Projects with publicly accessible Firestore databases",
+            "protected": "Protected Firestore collections (403)",
+            "rate_limited": "Rate limited (429)",
+            "other": "Other/errors",
+            "total_open_collections": "Total open collections found",
+        }
+
+    def _count_scan_results(self, scan_results):
+        """Firestore counts per project ID with open collections tracking."""
+        from ..core.config import (
+            STATUS_FORBIDDEN, STATUS_OK, STATUS_TOO_MANY_REQUESTS, STATUS_UNAUTHORIZED,
+        )
+        counts = {
+            "total_projects": len(scan_results),
+            "public_count": 0, "protected_count": 0, "not_found_count": 0,
+            "locked_count": 0, "rate_limited_count": 0,
+            "datastore_mode_count": 0, "other_count": 0,
+            "total_open_collections_count": 0,
+        }
+        for project_id, results in scan_results.items():
+            has_public = has_protected = has_datastore_mode = False
+            has_rate_limited = has_other = False
+            for url, result in results.items():
+                status = result["status"]
+                security = result["security"]
+                if self._is_result_public(status, security):
+                    has_public = True
+                if security == "DATASTORE_MODE":
+                    has_datastore_mode = True
+                elif status == STATUS_OK and security == "PUBLIC_DB_NONEXISTENT_COLLECTION":
+                    has_public = True
+                elif status in [STATUS_FORBIDDEN, STATUS_UNAUTHORIZED]:
+                    has_protected = True
+                elif status == STATUS_TOO_MANY_REQUESTS:
+                    has_rate_limited = True
+                elif status != STATUS_OK:
+                    has_other = True
+                # Count individual open collections
+                if status == STATUS_OK and security in ["PUBLIC", "PUBLIC_AUTH", "PUBLIC_SA"]:
+                    counts["total_open_collections_count"] += 1
+            if has_public: counts["public_count"] += 1
+            elif has_protected: counts["protected_count"] += 1
+            elif has_rate_limited: counts["rate_limited_count"] += 1
+            elif has_datastore_mode: counts["datastore_mode_count"] += 1
+            elif has_other: counts["other_count"] += 1
+        return counts
+
+    def _print_extra_summary_counts(self, counts, labels):
+        if "total_open_collections" in labels:
+            print(f"{labels['total_open_collections']}: {counts.get('total_open_collections_count', 0)}")
+
+    def _write_extra_summary_counts(self, f, counts, labels):
+        if "total_open_collections" in labels:
+            f.write(f"{labels['total_open_collections']}: {counts.get('total_open_collections_count', 0)}\n")
+
     def scan_project_id(
         self, project_id: str, collections: List[str] = None
     ) -> Dict[str, str]:
@@ -63,7 +155,7 @@ class FirestoreScanner(BaseScanner):
 
         # Add status-specific messages
         status_message = self._get_status_message(
-            status, security, message, result, "firestore"
+            status, security, message, result
         )
         print(f"{status_message}\n")  # Empty line for readability
 
@@ -213,7 +305,20 @@ class FirestoreScanner(BaseScanner):
                 f.write("Firebase Firestore Read Results\n")
                 f.write("=" * 80 + "\n\n")
 
-        for project_id in sorted(project_ids):
+        ordered_project_ids = []
+        seen = set()
+        if package_project_ids:
+            for package_name, project_id_set in package_project_ids.items():
+                for pid in sorted(project_id_set):
+                    if pid in project_ids and pid not in seen:
+                        ordered_project_ids.append(pid)
+                        seen.add(pid)
+        for pid in sorted(project_ids):
+            if pid not in seen:
+                ordered_project_ids.append(pid)
+                seen.add(pid)
+
+        for project_id in ordered_project_ids:
             package_names = project_to_packages.get(project_id, [])
 
             # Print project header immediately before testing
@@ -421,7 +526,7 @@ class FirestoreScanner(BaseScanner):
             # Create open-only results file if requested (for single scans)
             if create_open_only:
                 self._save_open_only_results(
-                    results, output_file, "firestore", package_project_ids
+                    results, output_file, package_project_ids
                 )
 
         return results
@@ -613,7 +718,20 @@ class FirestoreScanner(BaseScanner):
                 f.write("Firebase Firestore Write Results\n")
                 f.write("=" * 80 + "\n\n")
 
-        for project_id in sorted(project_ids):
+        ordered_project_ids = []
+        seen = set()
+        if package_project_ids:
+            for package_name, project_id_set in package_project_ids.items():
+                for pid in sorted(project_id_set):
+                    if pid in project_ids and pid not in seen:
+                        ordered_project_ids.append(pid)
+                        seen.add(pid)
+        for pid in sorted(project_ids):
+            if pid not in seen:
+                ordered_project_ids.append(pid)
+                seen.add(pid)
+
+        for project_id in ordered_project_ids:
             # Check for shutdown request
             from ..utils import is_shutdown_requested
             if is_shutdown_requested():
@@ -665,7 +783,7 @@ class FirestoreScanner(BaseScanner):
             # Create open-only results file if requested (for single scans)
             if create_open_only:
                 self._save_open_only_results(
-                    results, output_file, "firestore", package_project_ids
+                    results, output_file, package_project_ids
                 )
 
         return results
@@ -706,7 +824,7 @@ class FirestoreScanner(BaseScanner):
                     f.write(f"Content: {result['response_content']}\n")
 
                 status_message = self._get_status_message(
-                    status, security, message, result, "firestore", colorize=False
+                    status, security, message, result, colorize=False
                 )
                 f.write(f"{status_message}\n")
                 f.write("\n")
@@ -714,82 +832,39 @@ class FirestoreScanner(BaseScanner):
             f.write("\n")
 
     def _save_final_summary_to_file(
-        self, results: Dict[str, Dict[str, str]], output_file: str, resource_type: str, is_write_operation: bool = False
+        self, results: Dict[str, Dict[str, str]], output_file: str, _resource_type: str = None, is_write_operation: bool = False
     ):
         """Save final summary to file."""
         with open(output_file, "a", encoding="utf-8") as f:
-            counts = self._count_scan_results(results, resource_type)
-            labels = self._get_summary_labels(resource_type)
+            counts = self._count_scan_results(results)
+            labels = self._get_summary_labels()
 
             operation_type = "WRITE" if is_write_operation else "READ"
-            f.write(f"[UNAUTH] SCAN SUMMARY FIREBASE FIRESTORE {operation_type}\n")
+            f.write(f"[UNAUTH] SCAN SUMMARY {self.display_name} {operation_type}\n")
             f.write("=" * 80 + "\n")
             f.write(f"Total projects scanned: {counts['total_projects']}\n")
 
-            # Use different labels for write vs read operations
             if is_write_operation:
                 f.write(f"Projects with Firestore write access allowed: {counts['public_count']}\n")
                 f.write(f"Projects with write access denied (401/403): {counts['protected_count']}\n")
             else:
                 f.write(f"{labels['public']}: {counts['public_count']}\n")
                 f.write(f"{labels['protected']}: {counts['protected_count']}\n")
-            if resource_type not in [
-                "config",
-                "firestore",
-            ]:  # Config and Firestore don't have "not found" status
-                f.write(f"{labels['not_found']}: {counts['not_found_count']}\n")
 
-            # Add resource-specific counts
-            if resource_type == "config":
-                f.write(
-                    f"{labels['missing_config']}: {counts['missing_config_count']}\n"
-                )
-                f.write(f"{labels['no_config']}: {counts['no_config_count']}\n")
-            elif resource_type == "database":
-                f.write(f"{labels['locked']}: {counts['locked_count']}\n")
-            elif resource_type == "firestore":
-                if is_write_operation:
-                    f.write(
-                        f"Projects in Datastore Mode (empty/unused): {counts['datastore_mode_count']}\n"
-                    )
-                    f.write(
-                        f"Projects with successful write operations: {counts['public_count']}\n"
-                    )
-                else:
-                    f.write(
-                        f"{labels['datastore_mode']}: {counts['datastore_mode_count']}\n"
-                    )
-                    if counts["total_open_collections_count"] > 0:
-                        f.write(
-                            f"{labels['total_open_collections']}: {counts['total_open_collections_count']}\n"
-                        )
+            if is_write_operation:
+                f.write(f"Projects in Datastore Mode (empty/unused): {counts.get('datastore_mode_count', 0)}\n")
+                f.write(f"Projects with successful write operations: {counts['public_count']}\n")
+            else:
+                self._write_extra_summary_counts(f, counts, labels)
 
             if counts["rate_limited_count"] > 0:
                 f.write(f"{labels['rate_limited']}: {counts['rate_limited_count']}\n")
             f.write(f"{labels['other']}: {counts['other_count']}\n")
 
             if counts["public_count"] > 0:
-                if resource_type == "storage":
-                    resource_word = "storage buckets"
-                    access_desc = "are accessible without authentication"
-                elif resource_type == "config":
-                    resource_word = "remote configs"
-                    access_desc = "are accessible without authentication"
-                elif resource_type == "firestore":
-                    if is_write_operation:
-                        resource_word = "Firestore databases with write access"
-                        access_desc = "allow unauthenticated writing"
-                    else:
-                        resource_word = "Firestore databases"
-                        access_desc = "are accessible without authentication"
+                if is_write_operation:
+                    f.write(f"\nWARNING: {counts['public_count']} Firestore databases with write access found!\n")
+                    f.write("These Firestore databases allow unauthenticated writing.\n")
                 else:
-                    resource_word = "databases"
-                    access_desc = "are accessible without authentication"
-
-                warning_word = "public" if not (resource_type == "firestore" and is_write_operation) else ""
-                f.write(
-                    f"\nWARNING: {counts['public_count']} {warning_word} {resource_word} found!\n".replace("  ", " ")
-                )
-                f.write(
-                    f"These {resource_word.split(' with')[0] if 'with' in resource_word else resource_word} {access_desc}.\n"
-                )
+                    f.write(f"\nWARNING: {counts['public_count']} public {self.resource_word} found!\n")
+                    f.write(f"These {self.resource_word} are accessible without authentication.\n")

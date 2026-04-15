@@ -17,8 +17,114 @@ from .base import BaseScanner
 class StorageScanner(BaseScanner):
     """Scans Firebase Storage buckets to check accessibility and security status."""
 
+    resource_type = "storage"
+    display_name = "FIREBASE STORAGE"
+    resource_word = "storage buckets"
+
     # Bucket name suffixes Firebase uses
     _BUCKET_SUFFIXES = ("appspot.com", "firebasestorage.app")
+
+    def _get_status_message(self, status, security, message, result, colorize=True):
+        """Storage-specific status messages."""
+        from ..core.config import (
+            STATUS_BAD_REQUEST, STATUS_FORBIDDEN, STATUS_LOCKED, STATUS_NOT_FOUND,
+            STATUS_OK, STATUS_PRECONDITION_FAILED, STATUS_TOO_MANY_REQUESTS, STATUS_UNAUTHORIZED,
+        )
+        if colorize:
+            from ..core.config import RED, LIME, YELLOW, GREY, GOLD, RESET
+        else:
+            RED = LIME = YELLOW = GREY = GOLD = RESET = ""
+
+        surface = result.get("surface") if isinstance(result, dict) else None
+        surface_tag = f" [{surface}]" if surface else ""
+        if status == STATUS_OK:
+            if "write access allowed" in message or "upload successful" in message:
+                return f"{LIME}[+]{RESET} WRITE ACCESS ALLOWED{surface_tag} - This storage bucket allows file uploads!"
+            return f"{LIME}[+]{RESET} PUBLIC STORAGE{surface_tag} - This storage bucket is publicly accessible!"
+        if status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
+            if any(s in security for s in ["WRITE_FORBIDDEN", "AUTH_REQUIRED", "WRITE_DENIED"]):
+                return f"{RED}[-]{RESET} WRITE DENIED{surface_tag} - Storage bucket requires authentication for write access"
+            return f"{RED}[-]{RESET} PERMISSION DENIED{surface_tag} - Storage bucket is protected"
+        if status == STATUS_PRECONDITION_FAILED:
+            if "WRITE_PRECONDITION_FAILED" in security:
+                return f"{RED}[-]{RESET} WRITE PRECONDITION FAILED - Storage bucket write requirements not met"
+            return f"{RED}[-]{RESET} PERMISSION ERROR - Service account missing permissions"
+        if status == STATUS_BAD_REQUEST:
+            if "RULES_VERSION_ERROR" in security:
+                return f"{RED}[-]{RESET} RULES VERSION ERROR - Storage rules version 1 - listing disallowed"
+            if "INVALID_NAME" in security:
+                return f"{YELLOW}[!]{RESET}  INVALID FILE NAME - File name format not accepted"
+            if "WRITE_DENIED" in security:
+                return f"{RED}[-]{RESET} WRITE DENIED - Storage bucket does not allow write access"
+            return f"{YELLOW}[!]{RESET}  WARNING - {message}"
+        if status == STATUS_TOO_MANY_REQUESTS:
+            return f"{YELLOW}[!]{RESET}  WARNING - {message}"
+        if status == STATUS_LOCKED:
+            return f"{GOLD}[*]{RESET} LOCKED - Storage bucket is locked/deactivated"
+        if status == STATUS_NOT_FOUND:
+            return f"{RED}[-]{RESET} NOT FOUND - Storage bucket not found"
+        return f"{GREY}[UNK]{RESET} UNKNOWN - {message}"
+
+    def _get_summary_labels(self):
+        return {
+            "public": "Public storage buckets found",
+            "protected": "Protected storage buckets (401/403/400)",
+            "no_listing": "Storage does not allow listing files (412)",
+            "not_found": "Storage bucket not found (404)",
+            "rate_limited": "Rate limited (429)",
+            "other": "Other/errors",
+        }
+
+    def _count_scan_results(self, scan_results):
+        """Storage counts per project ID using prioritization."""
+        from ..core.config import (
+            STATUS_BAD_REQUEST, STATUS_FORBIDDEN, STATUS_LOCKED,
+            STATUS_NOT_FOUND, STATUS_OK, STATUS_PRECONDITION_FAILED,
+            STATUS_TOO_MANY_REQUESTS, STATUS_UNAUTHORIZED,
+        )
+        counts = {
+            "total_projects": len(scan_results),
+            "public_count": 0, "protected_count": 0, "not_found_count": 0,
+            "no_listing_count": 0, "locked_count": 0, "rate_limited_count": 0, "other_count": 0,
+        }
+        for project_id, results in scan_results.items():
+            has_public = has_protected = has_not_found = has_no_listing = False
+            has_rate_limited = has_other = False
+            for url, result in results.items():
+                status = result["status"]
+                security = result["security"]
+                if self._is_result_public(status, security):
+                    has_public = True
+                elif status in [STATUS_UNAUTHORIZED, STATUS_FORBIDDEN]:
+                    has_protected = True
+                elif status == STATUS_PRECONDITION_FAILED:
+                    has_no_listing = True
+                elif status == STATUS_BAD_REQUEST:
+                    has_protected = True if "RULES_VERSION_ERROR" in security else None
+                    if has_protected is None:
+                        has_other = True
+                        has_protected = False
+                elif status == STATUS_NOT_FOUND:
+                    has_not_found = True
+                elif status == STATUS_TOO_MANY_REQUESTS:
+                    has_rate_limited = True
+                else:
+                    has_other = True
+            if has_public: counts["public_count"] += 1
+            elif has_protected: counts["protected_count"] += 1
+            elif has_no_listing: counts["no_listing_count"] += 1
+            elif has_rate_limited: counts["rate_limited_count"] += 1
+            elif has_not_found: counts["not_found_count"] += 1
+            elif has_other: counts["other_count"] += 1
+        return counts
+
+    def _print_extra_summary_counts(self, counts, labels):
+        if "no_listing" in labels:
+            print(f"{labels['no_listing']}: {counts.get('no_listing_count', 0)}")
+
+    def _write_extra_summary_counts(self, f, counts, labels):
+        if "no_listing" in labels:
+            f.write(f"{labels['no_listing']}: {counts.get('no_listing_count', 0)}\n")
 
     def _build_read_urls(self, project_id: str) -> List[str]:
         """Build the list of storage read URLs to probe for a project.
@@ -381,7 +487,20 @@ class StorageScanner(BaseScanner):
                 f.write(f"Firebase {scan_type} Scan Results\n")
                 f.write("=" * 80 + "\n\n")
 
-        for project_id in sorted(project_ids):
+        ordered_project_ids = []
+        seen = set()
+        if package_project_ids:
+            for package_name, project_id_set in package_project_ids.items():
+                for pid in sorted(project_id_set):
+                    if pid in project_ids and pid not in seen:
+                        ordered_project_ids.append(pid)
+                        seen.add(pid)
+        for pid in sorted(project_ids):
+            if pid not in seen:
+                ordered_project_ids.append(pid)
+                seen.add(pid)
+
+        for project_id in ordered_project_ids:
             # Check for shutdown request
             if is_shutdown_requested():
                 print(f"\n{RED}[X]{RESET} Shutdown requested. Stopping {scan_type.lower()} scan...")
@@ -417,7 +536,7 @@ class StorageScanner(BaseScanner):
             # Create open-only results file if requested (for single scans)
             if create_open_only:
                 self._save_open_only_results(
-                    results, output_file, "storage", package_project_ids
+                    results, output_file, package_project_ids
                 )
 
         return results
@@ -458,7 +577,7 @@ class StorageScanner(BaseScanner):
                     f.write(f"Content: {result['response_content']}\n")
 
                 status_message = self._get_status_message(
-                    status, security, message, result, "storage", colorize=False
+                    status, security, message, result, colorize=False
                 )
                 f.write(f"{status_message}\n")
                 f.write("\n")
@@ -466,51 +585,32 @@ class StorageScanner(BaseScanner):
             f.write("\n")
 
     def _save_final_summary_to_file(
-        self, results: Dict[str, Dict[str, str]], output_file: str, resource_type: str
+        self, results: Dict[str, Dict[str, str]], output_file: str, _resource_type: str = None
     ):
         """Save final summary to file."""
         with open(output_file, "a", encoding="utf-8") as f:
-            counts = self._count_scan_results(results, resource_type)
-            labels = self._get_summary_labels(resource_type)
+            counts = self._count_scan_results(results)
+            labels = self._get_summary_labels()
 
-            f.write("[UNAUTH] SCAN SUMMARY FIREBASE STORAGE READ\n")
+            f.write(f"[UNAUTH] SCAN SUMMARY {self.display_name} READ\n")
             f.write("=" * 80 + "\n")
             f.write(f"Total projects scanned: {counts['total_projects']}\n")
             f.write(f"{labels['public']}: {counts['public_count']}\n")
             f.write(f"{labels['protected']}: {counts['protected_count']}\n")
-            if resource_type not in [
-                "config",
-                "firestore",
-            ]:  # Config and Firestore don't have "not found" status
+            if "not_found" in labels:
                 f.write(f"{labels['not_found']}: {counts['not_found_count']}\n")
 
-            # Add resource-specific counts
-            if resource_type == "config":
-                f.write(
-                    f"{labels['missing_config']}: {counts['missing_config_count']}\n"
-                )
-                f.write(f"{labels['no_config']}: {counts['no_config_count']}\n")
-            elif resource_type == "database":
-                f.write(f"{labels['locked']}: {counts['locked_count']}\n")
-            elif resource_type == "storage":
-                f.write(f"{labels['no_listing']}: {counts['no_listing_count']}\n")
+            self._write_extra_summary_counts(f, counts, labels)
 
             if counts["rate_limited_count"] > 0:
                 f.write(f"{labels['rate_limited']}: {counts['rate_limited_count']}\n")
             f.write(f"{labels['other']}: {counts['other_count']}\n")
 
             if counts["public_count"] > 0:
-                if resource_type == "storage":
-                    resource_word = "storage buckets"
-                elif resource_type == "config":
-                    resource_word = "remote configs"
-                elif resource_type == "firestore":
-                    resource_word = "Firestore databases"
-                else:
-                    resource_word = "databases"
                 f.write(
-                    f"\nWARNING: {counts['public_count']} public {resource_word} found!\n"
+                    f"\nWARNING: {counts['public_count']} public {self.resource_word} found!\n"
                 )
                 f.write(
-                    f"These {resource_word} are accessible without authentication.\n"
+                    f"These {self.resource_word} are accessible without authentication.\n"
                 )
+                self._write_extra_summary_warnings(f)
