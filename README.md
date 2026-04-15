@@ -13,7 +13,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)](https://www.python.org)
 [![GitHub issues](https://img.shields.io/github/issues/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/issues)
 
-Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
+Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config and Cloud functions), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
 
 Supports multiple inputs including Android APK extraction (DEX string pool + resources), iOS IPA extraction via GoogleService-Info.plist and Mach-O string scanning, and single or multiple project IDs. This means you can also use this tool if you find Firebase data in web applications.
 
@@ -22,6 +22,7 @@ Supports multiple inputs including Android APK extraction (DEX string pool + res
 **See also:**
 - [FireSA](https://github.com/Icex0/FireSA) — Service account exploitation tool for quickly demonstrating impact with a leaked private key.
 - [Firebase Pentest Checklist](https://github.com/Icex0/firebase-pentest-checklist) — Complete Firebase pentesting checklist, including the OpenFirebase commands. Most of it can be done with this tool.
+- [firebase-wordlists](https://github.com/Icex0/firebase-wordlists) — Wordlists for fuzzing Firebase Cloud Functions and Firestore, mined from public GitHub source code and ranked by real-world usage. Drop-in for `--fuzz-functions`.
 
 </div>
 
