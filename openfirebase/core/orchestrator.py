@@ -1818,7 +1818,7 @@ class OpenFirebaseOrchestrator:
 
             lines.append(f"\n{YELLOW}[!]{RESET} Found {total_auth_success_urls} resource(s) that were protected but accessible with authentication!")
         else:
-            lines.append("\nNo accessable resources found with authenticated scanning (all were already accessible without authentication or completely restricted)")
+            lines.append("\nNo accessible resources found with authenticated scanning (all were already accessible without authentication or completely restricted)")
 
         return lines
 

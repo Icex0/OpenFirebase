@@ -489,7 +489,7 @@ When using the `--read-functions` option, OpenFirebase probes Cloud Functions en
 - Evaluates response status codes:
   - **200**: Function reachable and returned a response — publicly invokable.
   - **400 / 405 / 415 / 500**: Function reachable but rejected the payload/method/content-type or errored — still confirms public reach.
-  - **401/403**: Protected — requires authentication. Retried with `--check-with-auth` when enabled.
+  - **401/403**: Protected — requires authentication. Retried with `--check-with-auth` when enabled. If the authenticated retry still returns `UNAUTHENTICATED`, App Check enforcement is likely active (Firebase rejects the request before function code runs regardless of a valid Auth token).
   - **404**: Function does not exist at that URL/region.
 - **Fuzzing mode (`--fuzz-functions <wordlist>`)**: When a Google App ID is available, OpenFirebase first extracts the project number and probes the `gcf-v2-sources-<project_number>-<region>` GCS bucket across all known Cloud Functions regions. Regions whose source bucket returns 200/400/401/500 ("alive regions") are then brute-forced with the wordlist, avoiding wasted requests against regions where no functions are deployed. Results are deduplicated against already-known function names from extraction.
 - **Direct probing with `--project-id`**: `--function-name <names>` (comma-separated, callable protocol) and/or `--function-region <regions>` can be supplied; alternatively `--fuzz-functions <wordlist>` enables bucket-probe + enumeration. At least one of these is required when combining `--read-functions` with `--project-id` / `--project-id-file`.

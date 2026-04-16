@@ -857,12 +857,16 @@ class BaseScanner(ABC):
                     else:
                         # Non-Firestore services
                         f.write("[+] PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
+                elif status in ["401", "403"] and security == "APP_CHECK":
+                    f.write("[!] APP CHECK — Callable returned UNAUTHENTICATED with a valid Bearer token — App Check is likely enforced\n")
                 elif status in ["401", "403"]:
                     f.write("[-] STILL PROTECTED - Resource remains protected even with authentication\n")
+                elif status in ["400", "405", "415", "500"] and "cloudfunctions.net" in url.lower():
+                    f.write("[+] PUBLIC ACCESS (AUTHENTICATED) - Cloud Function reachable (returned error — missing parameters or internal error)\n")
                 elif status == "404":
                     f.write("[-] NOT FOUND - Resource not found\n")
                 else:
-                    f.write("[?] UNKNOWN - Unexpected response: {status}\n")
+                    f.write(f"[?] UNKNOWN - Unexpected response: {status}\n")
 
                 f.write("\n")
 
