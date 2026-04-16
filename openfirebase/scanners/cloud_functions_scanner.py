@@ -798,15 +798,22 @@ class CloudFunctionsScanner(BaseScanner):
             # If no results at all, explain why so the output isn't an empty block
             if not project_results:
                 if not project_number and not project_urls:
-                    print(
-                        f"{YELLOW}[!]{RESET}  No Cloud Functions URLs or project number found — "
-                        f"skipping function probes for this project\n"
+                    reason = "No extracted function URLs and no project number for GCS probing"
+                elif alive_regions and not project_urls:
+                    reason = (
+                        f"GCS source buckets found in {', '.join(alive_regions)} but no extracted "
+                        f"function URLs or callable names — use --fuzz-functions to enumerate"
                     )
-                    project_results["(no Cloud Functions URLs or project number found for this project)"] = {
-                        "status": "skipped",
-                        "security": "SKIPPED",
-                        "message": "No extracted function URLs and no project number for GCS probing",
-                    }
+                else:
+                    reason = "No function URLs, callable names, or wordlist to probe"
+                print(
+                    f"{YELLOW}[!]{RESET}  {reason}\n"
+                )
+                project_results["(skipped — " + reason + ")"] = {
+                    "status": "skipped",
+                    "security": "SKIPPED",
+                    "message": reason,
+                }
 
             all_results[project_id] = project_results
 

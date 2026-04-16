@@ -418,8 +418,28 @@ class BaseScanner(ABC):
                     else:
                         self.read_auth_success_urls.add(url)
             elif response.status_code == 401:
-                auth_result["message"] = "Unauthorized (even with auth)"
-                auth_result["security"] = "PROTECTED"
+                # Check for App Check enforcement on Cloud Functions callables:
+                # if we sent a valid Auth token but still get UNAUTHENTICATED,
+                # App Check is likely rejecting the request.
+                if "cloudfunctions.net" in url:
+                    try:
+                        resp_json = response.json() if response.text else {}
+                        error_status = resp_json.get("error", {}).get("status", "")
+                        if error_status == "UNAUTHENTICATED":
+                            auth_result["message"] = (
+                                "Unauthorized (even with valid auth token) — "
+                                "App Check is likely enforced"
+                            )
+                            auth_result["security"] = "APP_CHECK"
+                        else:
+                            auth_result["message"] = "Unauthorized (even with auth)"
+                            auth_result["security"] = "PROTECTED"
+                    except (ValueError, KeyError):
+                        auth_result["message"] = "Unauthorized (even with auth)"
+                        auth_result["security"] = "PROTECTED"
+                else:
+                    auth_result["message"] = "Unauthorized (even with auth)"
+                    auth_result["security"] = "PROTECTED"
             elif response.status_code == 403:
                 auth_result["message"] = "Permission denied (even with auth)"
                 auth_result["security"] = "PROTECTED"
@@ -585,6 +605,9 @@ class BaseScanner(ABC):
                         else:
                             print(f"  {LIME}[+]{RESET} PUBLIC DATABASE: {url}")
                             print(f"     Status: {status} - Database is publicly accessible for any authenticated user")
+                    elif status in ["401", "403"] and security == "APP_CHECK":
+                        print(f"  {YELLOW}[!]{RESET}  APP CHECK: {url}")
+                        print(f"     Status: {status} - Callable returned UNAUTHENTICATED with a valid Bearer token — App Check is likely enforced")
                     elif status in ["401", "403"]:
                         print(f"  {RED}[-]{RESET} STILL PROTECTED: {url}")
                         print(f"     Status: {status} - Permission denied (even with auth)")
@@ -638,6 +661,8 @@ class BaseScanner(ABC):
                             print(f"\n{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Resource is publicly accessible with authentication\n")
                     elif status in ["400", "405", "500"] and "cloudfunctions.net" in url:
                         print(f"\n{GREEN}[+]{RESET} PUBLIC ACCESS (AUTHENTICATED) - Cloud Function reachable (returned error — missing parameters or internal error)\n")
+                    elif status in ["401", "403"] and security == "APP_CHECK":
+                        print(f"\n{YELLOW}[!]{RESET}  APP CHECK — Callable returned UNAUTHENTICATED with a valid Bearer token — App Check is likely enforced\n")
                     elif status in ["401", "403"]:
                         print(f"\n{RED}[-]{RESET} STILL PROTECTED - Resource remains protected even with authentication\n")
                     elif status == "404":
