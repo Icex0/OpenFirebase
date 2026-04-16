@@ -13,11 +13,13 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)](https://www.python.org)
 [![GitHub issues](https://img.shields.io/github/issues/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/issues)
 
-Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config and Cloud functions), including support for all known service URL formats. Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
+Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config and Cloud functions), including support for all known service URL formats.
+
+Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
 
 Supports multiple inputs including Android APK extraction (DEX string pool + resources), iOS IPA extraction via GoogleService-Info.plist and Mach-O string scanning, and single or multiple project IDs. This means you can also use this tool if you find Firebase data in web applications.
 
-> [>> See my blog for more information: https://ice0.blog/docs/openfirebase <<](https://ice0.blog/docs/openfirebase)
+[>> See my blog for more information: https://ice0.blog/docs/openfirebase <<](https://ice0.blog/docs/openfirebase)
 
 **See also:**
 - [FireSA](https://github.com/Icex0/FireSA) — Service account exploitation tool for quickly demonstrating impact with a leaked private key.
@@ -78,13 +80,14 @@ python -m pipx ensurepath
 # Install by cloning the repository
 git clone https://github.com/Icex0/OpenFirebase.git
 cd OpenFirebase
-pipx install .
+pipx install . --force
 ```
 
 #### Default Wordlists and Payloads
 
-OpenFirebase includes a built-in firestore collection wordlist and example payloads for write testing. These files must be explicitly specified in command line arguments. Feel free to use your own:
-- Use `--fuzz-collections openfirebase/wordlist/firestore-collections.txt` for collection fuzzing
+OpenFirebase includes built-in wordlists and example payloads for write testing. These files must be explicitly specified in command line arguments. Feel free to use your own:
+- Use `--fuzz-functions openfirebase/wordlist/cloud-functions.txt` for Cloud Functions fuzzing
+- Use `--fuzz-collections openfirebase/wordlist/firestore-collections.txt` for Firestore collection fuzzing
 - Use `--write-rtdb openfirebase/payloads/openfirebase.json` for RTDB write testing
 - Use `--write-storage openfirebase/payloads/openfirebase_storage_write_check.txt` for storage write testing
 - Use `--write-firestore "unauth_write_check"` for Firestore write testing (writes to `firestore_unauthenticated_access` collection)
@@ -373,7 +376,7 @@ OpenFirebase extracts Firebase Cloud Functions data from APKs and IPAs through m
 
 - **Cloud Functions URLs** — Full `cloudfunctions.net` URLs found in DEX string pools, resource files, and iOS binaries. Captures the region, project ID, function name, subroutes, and any static query parameters. For example, `us-central1-myproject.cloudfunctions.net/api/users?limit=10` is captured as a single finding with the full path.
 - **Callable function names** — Extracted via DEX bytecode walking of `FirebaseFunctions.getHttpsCallable("functionName")` calls (Java/Kotlin) and regex matching of `httpsCallable(functions, "functionName")` calls (JavaScript in `assets/www/` for Cordova/Ionic/Capacitor apps). These are function names that the app invokes via the Firebase callable protocol.
-- **Non-default regions** — Extracted via bytecode walking of `FirebaseFunctions.getInstance("region")` calls. The default region `us-central1` is excluded as it appears as a hardcoded constant in the Firebase Functions SDK itself and would produce false positives for any app that includes the SDK as a dependency without actually using Cloud Functions.
+- **Non-default regions** — Extracted via bytecode walking of `FirebaseFunctions.getInstance("region")` calls.
 
 #### Limitations and manual analysis
 

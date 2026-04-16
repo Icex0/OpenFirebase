@@ -61,6 +61,8 @@ class CloudFunctionsScanner(BaseScanner):
         else:
             RED = LIME = YELLOW = GREY = RESET = ""
 
+        if security == "SKIPPED":
+            return f"{GREY}[-]{RESET} SKIPPED - {message}"
         if security == "SOURCE_LEAK":
             return f"{LIME}[+]{RESET} SOURCE CODE LEAK - Cloud Functions source code bucket is publicly listable!"
         if security == "PUBLIC" or status == STATUS_OK:
@@ -383,28 +385,26 @@ class CloudFunctionsScanner(BaseScanner):
     def scan_extracted_urls(
         self, urls: Set[str],
     ) -> Dict[str, Dict[str, str]]:
-        """Probe extracted HTTP trigger URLs.
+        """Probe every extracted HTTP trigger URL individually.
 
-        Deduplicates by base function URL (strips subroutes/params) since
-        IAM auth applies at the function level.
+        IAM invoke permissions (allUsers/allAuthenticatedUsers) apply at
+        the function level — path-level IAM conditions only work for
+        specific principals, not public access.  We still probe each URL
+        individually because application-layer routing (e.g. Express)
+        can return different responses per path, and the user should see
+        every extracted URL with its actual response.
         """
         results = {}
-        seen_bases = set()
 
         for url in sorted(urls):
             if is_shutdown_requested():
                 break
 
-            base_url = self._extract_base_function_url(url)
-            if base_url in seen_bases:
-                continue
-            seen_bases.add(base_url)
-
-            result = self._test_http_function(base_url)
-            results[base_url] = result
+            result = self._test_http_function(url)
+            results[url] = result
 
             # Print result immediately
-            self._print_single_result(base_url, result)
+            self._print_single_result(url, result)
 
             time.sleep(1.0 / self.rate_limit)
 
@@ -709,6 +709,13 @@ class CloudFunctionsScanner(BaseScanner):
             # Keep any source-leak findings already added.
             skip_probes = alive_regions is not None and len(alive_regions) == 0
 
+            if skip_probes:
+                project_results["(no Cloud Functions source buckets found — probes skipped)"] = {
+                    "status": "skipped",
+                    "security": "SKIPPED",
+                    "message": "No GCS source buckets found in any region",
+                }
+
             # Phase 1a: Probe extracted HTTP trigger URLs
             if project_urls and not skip_probes:
                 print(
@@ -787,6 +794,19 @@ class CloudFunctionsScanner(BaseScanner):
             if self.authenticated_results:
                 self.all_authenticated_results[project_id] = self.authenticated_results.copy()
             self.authenticated_results.clear()
+
+            # If no results at all, explain why so the output isn't an empty block
+            if not project_results:
+                if not project_number and not project_urls:
+                    print(
+                        f"{YELLOW}[!]{RESET}  No Cloud Functions URLs or project number found — "
+                        f"skipping function probes for this project\n"
+                    )
+                    project_results["(no Cloud Functions URLs or project number found for this project)"] = {
+                        "status": "skipped",
+                        "security": "SKIPPED",
+                        "message": "No extracted function URLs and no project number for GCS probing",
+                    }
 
             all_results[project_id] = project_results
 
