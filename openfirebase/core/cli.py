@@ -129,6 +129,15 @@ def validate_fuzz_collections(fuzz_collections: Optional[Path]) -> None:
             )
 
 
+def validate_fuzz_functions(fuzz_functions: Optional[Path]) -> None:
+    """Validate fuzz functions requirements."""
+    if fuzz_functions:
+        if not fuzz_functions.exists():
+            raise typer.BadParameter(
+                f"Wordlist file does not exist: {fuzz_functions}"
+            )
+
+
 def validate_auth_options(
     check_with_auth: bool,
     email: Optional[str],
@@ -649,6 +658,7 @@ def main(
     validate_credentials_usage(app_id, api_key, project_id, project_id_file, read_config)
     validate_functions_options(read_functions, fuzz_functions, function_name, project_id, project_id_file, file, apk_dir, resume)
     validate_fuzz_collections(fuzz_collections)
+    validate_fuzz_functions(fuzz_functions)
     validate_write_options(write_storage, write_firestore, write_rtdb, write_all)
     validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key, google_id_token)
     validate_remote_config_options(read_config, read_all, project_id, project_id_file, api_key, app_id, cert_sha1, package_name)

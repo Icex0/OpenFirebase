@@ -496,10 +496,9 @@ class CloudFunctionsScanner(BaseScanner):
                     continue
 
                 tested += 1
-                if tested % 50 == 0:
+                if tested % 20 == 0:
                     print(
-                        f"   Enumeration progress: {tested}/{total} "
-                        f"({len(results)} found)..."
+                        f"   Fuzzing progress: {tested}/{total} functions tested..."
                     )
 
                 url = self._build_function_url(project_id, region, name)
@@ -540,7 +539,6 @@ class CloudFunctionsScanner(BaseScanner):
 
                 results[url] = result
                 print(f"   {LIME}[+]{RESET} Found function: {name} ({region})")
-                self._print_single_result(url, result)
 
                 time.sleep(1.0 / self.rate_limit)
 
@@ -597,7 +595,7 @@ class CloudFunctionsScanner(BaseScanner):
                         line.strip() for line in f if line.strip() and not line.startswith("#")
                     ]
                 print(
-                    f"{BLUE}[INF]{RESET} Loaded {len(fuzz_wordlist)} function names from wordlist"
+                    f"{BLUE}[INF]{RESET} Loaded {len(fuzz_wordlist)} function names from wordlist\n"
                 )
             except OSError as e:
                 print(f"{RED}[ERR]{RESET} Failed to load wordlist: {e}")
@@ -762,7 +760,7 @@ class CloudFunctionsScanner(BaseScanner):
                     # No project number — fall back to extracted regions + us-central1
                     print(
                         f"{YELLOW}[!]{RESET}  No Google App ID available for GCS bucket probing, "
-                        f"using extracted regions only"
+                        f"using extracted regions only or falling back to the default region us-central1"
                     )
                     fuzz_regions = list(regions) if regions else ["us-central1"]
                 else:
@@ -770,7 +768,7 @@ class CloudFunctionsScanner(BaseScanner):
 
                 if fuzz_regions:
                     print(
-                        f"{BLUE}[INF]{RESET} Enumerating {len(fuzz_wordlist)} function names "
+                        f"{BLUE}[INF]{RESET} Fuzzing {len(fuzz_wordlist)} function names "
                         f"across {len(fuzz_regions)} region(s)..."
                     )
                     enum_results = self.enumerate_functions(
@@ -778,14 +776,19 @@ class CloudFunctionsScanner(BaseScanner):
                     )
                     project_results.update(enum_results)
 
+                    print(f"{BLUE}[INF]{RESET} Fuzzing completed for project {project_id}:")
                     if enum_results:
                         print(
-                            f"{BLUE}[INF]{RESET} Enumeration found {len(enum_results)} function(s)"
+                            f"   {LIME}[+]{RESET} Found {len(enum_results)} public function(s)"
                         )
+                        for enum_url in enum_results:
+                            fn_name = enum_url.rstrip("/").rsplit("/", 1)[-1]
+                            host = enum_url.split("//", 1)[-1].split(".", 1)[0]
+                            region = host.rsplit(f"-{project_id}", 1)[0] if f"-{project_id}" in host else host
+                            print(f"      - {fn_name} ({region})")
                     else:
-                        print(
-                            f"{BLUE}[INF]{RESET} Enumeration complete, no additional functions found"
-                        )
+                        print(f"   {YELLOW}[!]{RESET} No additional public functions found")
+                    print()
 
             # Display authenticated results
             self._display_verbose_authenticated_results(project_results)
