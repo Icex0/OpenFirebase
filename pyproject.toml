@@ -26,7 +26,7 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 dependencies = [
-    "androguard>=3.4.0",
+    "androguard @ git+https://github.com/Icex0/androguard.git@57e8c395ca8894a47baaaa0c4da449be09961df5",
     "tqdm>=4.64.0",
     "requests>=2.28.0",
     "typer[all]>=0.9.0",
