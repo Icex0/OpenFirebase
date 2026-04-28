@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Icex0/OpenFirebase/docs/schema/openfirebase-scan.schema.json",
+  "title": "OpenFirebase Scan Result",
+  "description": "One document per scan run (one bundle, one DNS list, or one --project-id invocation).",
+  "type": "object",
+  "required": ["schema_version", "tool_version", "scan_id", "input", "projects"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.1",
+      "description": "Breaking changes increment the major component. 1.1 adds per-project `extracted_items`."
+    },
+    "tool_version": {
+      "type": "string",
+      "description": "OpenFirebase package version that produced this document."
+    },
+    "scan_id": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+
+    "input": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["apk", "ipa", "folder", "project_ids", "dns_list"] },
+        "source": { "type": "string", "description": "Path or identifier for the input." },
+        "platform": { "enum": ["android", "ios", null] }
+      }
+    },
+
+    "config": {
+      "type": "object",
+      "description": "Flags the scan was invoked with. Needed to reproduce a run and explain output volume.",
+      "properties": {
+        "check_with_auth": { "type": "boolean" },
+        "fuzz_collections": { "type": "boolean" },
+        "fuzz_functions": { "type": "boolean" },
+        "wordlist": { "type": ["string", "null"] },
+        "rate_limit": { "type": ["number", "null"] },
+        "services": {
+          "type": "array",
+          "items": { "enum": ["rtdb", "firestore", "storage", "remote_config", "cloud_functions"] }
+        }
+      }
+    },
+
+    "auth": {
+      "type": "object",
+      "properties": {
+        "used": { "type": "boolean" },
+        "identities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "ref"],
+            "properties": {
+              "kind": { "enum": ["user_token", "service_account"] },
+              "ref": { "type": "string", "description": "client_email for SAs, opaque id for user tokens." }
+            }
+          }
+        }
+      }
+    },
+
+    "extraction": {
+      "type": "object",
+      "description": "What was pulled from the input before scanning.",
+      "properties": {
+        "bundle": {
+          "type": "object",
+          "properties": {
+            "type": { "enum": ["apk", "ipa"] },
+            "path": { "type": "string" },
+            "package_name": { "type": "string" },
+            "signatures": {
+              "type": "object",
+              "properties": {
+                "sha1": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "One entry per signing certificate (APKs can have multiple)."
+                }
+              }
+            },
+            "items": {
+              "type": "array",
+              "description": "Pattern-matched strings. Feeds the scanner URL list. Pattern names come from firebase_rules.json.",
+              "items": {
+                "type": "object",
+                "required": ["type", "value"],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "Firebase_Project_ID",
+                      "Google_API_Key",
+                      "Other_Google_API_Key",
+                      "Google_App_ID",
+                      "Other_Google_App_ID",
+                      "Other_Firebase_Project_ID",
+                      "Firebase_Database_US",
+                      "Firebase_Database_Other",
+                      "Firebase_Storage_New",
+                      "Firebase_Storage_Old",
+                      "Firebase_Storage_API",
+                      "Firestore_Collection_Name",
+                      "Cloud_Functions_URL",
+                      "Cloud_Functions_Callable_Name",
+                      "Cloud_Functions_Region"
+                    ]
+                  },
+                  "value": { "type": "string" }
+                }
+              }
+            },
+            "service_accounts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["client_email", "project_id", "private_key"],
+                "properties": {
+                  "client_email": { "type": "string" },
+                  "project_id": { "type": "string" },
+                  "private_key": { "type": "string", "description": "Full PEM." },
+                  "file_path": { "type": "string" }
+                }
+              }
+            },
+            "leaked_private_keys": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["pem", "pem_type"],
+                "properties": {
+                  "pem_type": { "type": "string", "description": "e.g. 'RSA PRIVATE KEY', 'PRIVATE KEY', 'EC PRIVATE KEY'." },
+                  "pem": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "dns": {
+          "type": "object",
+          "description": "Populated only when input.type == 'dns_list'.",
+          "properties": {
+            "matched_project_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["project_id", "findings"],
+        "properties": {
+          "project_id": { "type": "string" },
+          "package_names": { "type": "array", "items": { "type": "string" } },
+          "started_at": { "type": "string", "format": "date-time" },
+          "finished_at": { "type": "string", "format": "date-time" },
+
+          "extracted_items": {
+            "type": "object",
+            "description": "Per-project pivot of items extracted from the bundle(s) that referenced this project. Keys are pattern names (e.g. Firebase_Project_ID, Google_API_Key); values are deduplicated string arrays. Mirrors the per-package buckets in firebase_items.txt, grouped by project_id.",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/finding" }
+          }
+        }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "properties": {
+        "per_service": {
+          "type": "object",
+          "patternProperties": {
+            "^(rtdb|firestore|storage|remote_config|cloud_functions)$": {
+              "type": "object",
+              "properties": {
+                "read_public_unauth":  { "type": "integer", "minimum": 0 },
+                "read_public_auth":    { "type": "integer", "minimum": 0 },
+                "write_public_unauth": { "type": "integer", "minimum": 0 },
+                "write_public_auth":   { "type": "integer", "minimum": 0 },
+                "app_check":           { "type": "integer", "minimum": 0 },
+                "protected":           { "type": "integer", "minimum": 0 },
+                "not_found":           { "type": "integer", "minimum": 0 },
+                "rate_limited":        { "type": "integer", "minimum": 0 },
+                "errors":              { "type": "integer", "minimum": 0 },
+                "other":               { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["service", "url", "probe", "unauth"],
+      "properties": {
+        "service": { "enum": ["rtdb", "firestore", "storage", "remote_config", "cloud_functions"] },
+        "url": { "type": "string", "format": "uri" },
+        "probe": {
+          "enum": ["read", "write"],
+          "description": "RTDB/Firestore/Storage emit both read and write findings per URL. Remote Config and Cloud Functions emit read only."
+        },
+        "resource": {
+          "type": "object",
+          "description": "Service-specific context. Fields populated depend on `service`.",
+          "properties": {
+            "surface":       { "enum": ["Firebase Rules", "GCS IAM"], "description": "Storage only." },
+            "collection":    { "type": "string", "description": "Firestore only." },
+            "function_name": { "type": "string", "description": "Cloud Functions only." },
+            "region":        { "type": "string", "description": "Cloud Functions only." },
+            "origin":        { "enum": ["extracted", "fuzzed", "default"] }
+          }
+        },
+        "unauth": { "$ref": "#/$defs/probe_result" },
+        "auth":   {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/probe_result_auth" }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["stage", "kind"],
+              "properties": {
+                "stage": { "enum": ["unauth", "auth", "extraction"] },
+                "kind":  { "enum": ["TIMEOUT", "CONNECTION_ERROR", "ERROR", "DNS", "OTHER"] },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    "probe_result": {
+      "type": "object",
+      "required": ["status", "security", "verdict"],
+      "properties": {
+        "status":  { "type": "string", "description": "HTTP status as string; '0' for transport errors." },
+        "security": {
+          "description": "Raw security classification emitted by the scanner. Per-service vocab — see spec.",
+          "type": "string",
+          "enum": [
+            "PUBLIC", "PROTECTED", "NOT_FOUND", "LOCKED", "RATE_LIMITED",
+            "DATASTORE_MODE", "PUBLIC_DB_NONEXISTENT_COLLECTION",
+            "RULES_VERSION_ERROR", "WRITE_DENIED",
+            "NO_CONFIG", "MISSING_CONFIG",
+            "SOURCE_LEAK", "SKIPPED",
+            "TIMEOUT", "CONNECTION_ERROR", "ERROR",
+            "UNKNOWN"
+          ]
+        },
+        "message": { "type": "string" },
+        "response_content": { "type": ["string", "null"] },
+        "verdict": {
+          "enum": ["public", "protected", "not_found", "rate_limited", "locked", "error", "unknown"],
+          "description": "Stable, service-agnostic bucket derived from (status, security, service). UI keys off this."
+        }
+      }
+    },
+
+    "probe_result_auth": {
+      "type": "object",
+      "required": ["status", "security", "verdict", "identity"],
+      "properties": {
+        "status":  { "type": "string" },
+        "security": {
+          "type": "string",
+          "enum": [
+            "PUBLIC", "PUBLIC_AUTH", "PUBLIC_SA",
+            "PROTECTED", "APP_CHECK", "NOT_FOUND",
+            "TIMEOUT", "CONNECTION_ERROR", "ERROR",
+            "UNKNOWN"
+          ]
+        },
+        "message": { "type": "string" },
+        "response_content": { "type": ["string", "null"] },
+        "verdict": {
+          "enum": ["public", "still_protected", "app_check", "not_found", "error", "unknown"]
+        },
+        "identity": {
+          "type": "object",
+          "required": ["kind", "ref"],
+          "properties": {
+            "kind": { "enum": ["user_token", "service_account"] },
+            "ref":  { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

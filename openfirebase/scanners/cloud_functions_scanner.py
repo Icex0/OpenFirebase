@@ -17,7 +17,7 @@ from ..utils import is_shutdown_requested
 from .base import BaseScanner
 
 # Default wordlist path (relative to this file)
-DEFAULT_WORDLIST_PATH = Path(__file__).parent.parent / "wordlist" / "cloud-functions.txt"
+DEFAULT_WORDLIST_PATH = Path(__file__).parent.parent / "wordlist" / "cloud-functions-top-250.txt"
 
 # Build a set of known regions for URL parsing
 _CF_REGION_SET = frozenset(CLOUD_FUNCTIONS_REGIONS)

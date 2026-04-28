@@ -1,0 +1,55 @@
+[project]
+name = "openfirebase-web-backend"
+version = "0.1.0"
+description = "Backend API + scanner worker for the OpenFirebase web companion"
+requires-python = ">=3.11"
+
+# Default deps are shared by the API backend *and* the scanner worker.
+# Anything that only the HTTP surface needs lives under the [web] extra so
+# the scanner image can install this package without pulling it in —
+# keeping fastapi / fastapi-users / uvicorn out of the untrusted-parser
+# sandbox is a deliberate attack-surface reduction.
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0.35",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    "pydantic[email]>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "boto3>=1.35.0",
+    "tenacity>=9.0.0",
+    # Pure SQLAlchemy adapter — provides the User base class that the scans
+    # FK targets. The scanner needs it to resolve the foreign key at flush
+    # time, even though it never touches the user table itself.
+    "fastapi-users-db-sqlalchemy>=6.0.0",
+    # Fernet encryption for scan credentials stored in scans.options — keyed
+    # off app_secret so a DB dump alone can't recover them.
+    "cryptography>=43.0.0",
+]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "fastapi-users>=14.0.0",
+    "python-multipart>=0.0.12",
+    "httpx>=0.27.0",
+]
+dev = [
+    "ruff>=0.6.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]

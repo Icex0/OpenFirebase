@@ -22,7 +22,7 @@ app = typer.Typer(
 
 def validate_input_exclusivity(
     file: Optional[str],
-    apk_dir: Optional[str],
+    app_dir: Optional[str],
     project_id: Optional[str],
     project_id_file: Optional[Path],
     parse_dns_file: Optional[Path],
@@ -30,19 +30,19 @@ def validate_input_exclusivity(
     resume_auth_file: Optional[Path]
 ) -> None:
     """Validate that input options are mutually exclusive."""
-    input_options = [file, apk_dir, project_id, project_id_file, parse_dns_file, resume, resume_auth_file]
+    input_options = [file, app_dir, project_id, project_id_file, parse_dns_file, resume, resume_auth_file]
     provided_options = [opt for opt in input_options if opt is not None]
 
     if len(provided_options) == 0:
         raise typer.BadParameter(
             "At least one input option must be specified: "
-            "--file, --apk-dir, --project-id, --project-id-file, --parse-dns-file, --resume, or --resume-auth-file"
+            "--file, --app-dir, --project-id, --project-id-file, --parse-dns-file, --resume, or --resume-auth-file"
         )
 
     if len(provided_options) > 1:
         option_names = []
         if file: option_names.append("--file")
-        if apk_dir: option_names.append("--apk-dir")
+        if app_dir: option_names.append("--app-dir")
         if project_id: option_names.append("--project-id")
         if project_id_file: option_names.append("--project-id-file")
         if parse_dns_file: option_names.append("--parse-dns-file")
@@ -107,11 +107,11 @@ def validate_functions_options(
     project_id: Optional[str],
     project_id_file: Optional[Path],
     file: Optional[str],
-    apk_dir: Optional[str],
+    app_dir: Optional[str],
     resume: Optional[Path]
 ) -> None:
     """Validate Cloud Functions scan requirements."""
-    is_apk_mode = file or apk_dir or resume
+    is_apk_mode = file or app_dir or resume
     if read_functions and (project_id or project_id_file) and not is_apk_mode:
         if not function_name and not fuzz_functions:
             raise typer.BadParameter(
@@ -392,10 +392,10 @@ def main(
         help="Single mobile bundle to process: .apk (Android: DEX string pool + resources) or .ipa (iOS: plist + Mach-O strings).",
         rich_help_panel="Input Options"
     ),
-    apk_dir: Optional[str] = Option(
+    app_dir: Optional[str] = Option(
         None,
-        "-d", "--apk-dir",
-        help="Directory containing mobile bundles (*.apk and/or *.ipa). APKs scan the DEX string pool + assets/res-raw resources; IPAs scan plist + Mach-O strings.",
+        "-d", "--app-dir", "--apk-dir",
+        help="Directory containing mobile apps (*.apk and/or *.ipa). APKs scan the DEX string pool + assets/res-raw resources; IPAs scan plist + Mach-O strings. (--apk-dir is a deprecated alias for --app-dir.)",
         rich_help_panel="Input Options"
     ),
     resume: Optional[Path] = Option(
@@ -418,7 +418,6 @@ def main(
         help=f"Output directory for all generated files (default: {DEFAULT_OUTPUT_DIR}/)",
         rich_help_panel="Processing Options"
     ),
-
     # Read Testing
     read_rtdb: bool = Option(
         False,
@@ -649,14 +648,14 @@ def main(
     Firebase services for security misconfigurations.
     """
     # Perform all validations
-    validate_input_exclusivity(file, apk_dir, project_id, project_id_file, parse_dns_file, resume, resume_auth_file)
+    validate_input_exclusivity(file, app_dir, project_id, project_id_file, parse_dns_file, resume, resume_auth_file)
     validate_exclude_project_id(exclude_project_id, resume)
 
     # Handle resume auth file validation and get actual file path
     validated_resume_auth_file = validate_resume_auth_file_options(resume_auth_file, check_with_auth)
 
     validate_credentials_usage(app_id, api_key, project_id, project_id_file, read_config)
-    validate_functions_options(read_functions, fuzz_functions, function_name, project_id, project_id_file, file, apk_dir, resume)
+    validate_functions_options(read_functions, fuzz_functions, function_name, project_id, project_id_file, file, app_dir, resume)
     validate_fuzz_collections(fuzz_collections)
     validate_fuzz_functions(fuzz_functions)
     validate_write_options(write_storage, write_firestore, write_rtdb, write_all)
@@ -675,7 +674,7 @@ def main(
 
     args = Args()
     args.file = file
-    args.apk_dir = apk_dir
+    args.app_dir = app_dir
     args.resume = str(resume) if resume else None
     args.resume_file = resume_file
     args.output_dir = output_dir

@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body {
+    @apply bg-ink-950 text-ink-100 antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+  body {
+    font-family: "Inter var", "Inter", system-ui, sans-serif;
+  }
+  ::selection {
+    @apply bg-accent-muted text-accent-hover;
+  }
+}
+
+@layer components {
+  .hairline {
+    @apply border border-ink-700/80;
+  }
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:ring-offset-0;
+  }
+}
+
+/* Subtle noise/grid overlay for texture */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+}

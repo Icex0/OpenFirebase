@@ -91,7 +91,7 @@ class OpenFirebaseOrchestrator:
             
             # Display cert/package warnings if applicable
             # Don't show warnings in file (-f) or directory (-d) modes since cert-sha1 and package-name are extracted from APK files
-            is_apk_extraction_mode = args.file or args.apk_dir
+            is_apk_extraction_mode = args.file or args.app_dir
             should_show_warnings = (
                 # Remote Config scanning is requested in project ID modes (not APK extraction modes)
                 ((args.scan_config or args.scan_all) and (args.scan_project_id or args.scan_project_id_file)) or
@@ -134,6 +134,37 @@ class OpenFirebaseOrchestrator:
                     f"{YELLOW}[WARNING]{RESET} --app-id not provided. "
                     f"Google Cloud Storage liveness probing is disabled for Cloud Functions scanning and scans may waste requests on projects without Cloud Functions. "
                     f"Pass --app-id 1:PROJECT_NUMBER:android:HASH to enable probing and source code leak detection.\n"
+                )
+
+            # Warn when --api-key / --app-id are sprayed over multiple project IDs.
+            # Both are project-scoped: an API key belongs to exactly one Firebase
+            # project, and an App ID encodes the project number in its prefix
+            # (1:PROJECT_NUMBER:PLATFORM:HASH). Probing N projects with creds
+            # that only match one of them wastes requests and produces confusing
+            # 403s on the other N-1.
+            multi_project_count = 0
+            if args.scan_project_id:
+                multi_project_count = len(
+                    [p for p in args.scan_project_id.split(",") if p.strip()]
+                )
+            elif args.scan_project_id_file:
+                try:
+                    multi_project_count = sum(
+                        1 for line in Path(args.scan_project_id_file).read_text().splitlines() if line.strip()
+                    )
+                except OSError:
+                    multi_project_count = 0
+            if multi_project_count > 1 and (getattr(args, "api_key", None) or getattr(args, "app_id", None)):
+                fields = []
+                if getattr(args, "api_key", None):
+                    fields.append("--api-key")
+                if getattr(args, "app_id", None):
+                    fields.append("--app-id")
+                print(
+                    f"{YELLOW}[WARNING]{RESET} {', '.join(fields)} is project-scoped but "
+                    f"you supplied {multi_project_count} project IDs. The credential will only "
+                    f"match one project; the other {multi_project_count - 1} will likely fail "
+                    f"with 403/invalid-key responses."
                 )
 
             # Route to appropriate workflow
@@ -686,7 +717,7 @@ class OpenFirebaseOrchestrator:
 
     def _process_directory(self, args, file_handler, process_count):
         """Process a directory of APK files."""
-        extractor = FirebaseExtractor(args.apk_dir)
+        extractor = FirebaseExtractor(args.app_dir)
 
         # Get APK files to process
         apk_files = extractor.get_apk_files()
@@ -754,7 +785,7 @@ class OpenFirebaseOrchestrator:
                     process_args = [
                         (
                             str(apk_path),
-                            str(args.apk_dir),
+                            str(args.app_dir),
                             timestamped_output,
                         )
                         for apk_path in apk_files
@@ -936,13 +967,26 @@ class OpenFirebaseOrchestrator:
                             final_apk_results,
                             collections_per_package,
                         )
-                    else:
-                        print(f"{RED} No project IDs found to scan. {RESET}")
+                        return 0
+                    print(f"{RED} No project IDs found to scan. {RESET}")
             else:
                 print(f"{RED} No Firebase project IDs found. {RESET}")
         else:
             print(f"{RED}No Firebase items found.{RESET}")
 
+        # Extraction-only path: no scans were performed but we still want
+        # the JSON document so consumers (and the web companion) always
+        # have machine-readable output.
+        self._emit_json_scan_document(
+            args=args,
+            scanner=None,
+            firebase_auth=None,
+            is_apk_mode=True,
+            package_project_ids=locals().get("package_project_ids"),
+            extraction_results=final_apk_results if results else None,
+            scan_sections={},
+            all_auth_results={},
+        )
         return 0
 
     def _has_service_account_auth(self, args, results=None):
@@ -1684,7 +1728,146 @@ class OpenFirebaseOrchestrator:
                     f"\n{BLUE}[INF]{RESET} Combined scan results have been saved to {combined_output_file}"
                 )
 
+        # Always emit the structured JSON scan document — it's the
+        # machine-readable output other tools (and the web companion)
+        # consume. Honors --json-path if set, otherwise auto.
+        self._emit_json_scan_document(
+            args=args,
+            scanner=scanner,
+            firebase_auth=firebase_auth,
+            is_apk_mode=is_apk_mode,
+            package_project_ids=package_project_ids,
+            extraction_results=results,
+            scan_sections={
+                "Realtime Database": db_scan_results,
+                "Storage": storage_scan_results,
+                "Remote Config": config_scan_results,
+                "Firestore": firestore_scan_results,
+                "Cloud Functions": cloud_functions_scan_results,
+                "Storage Write": storage_write_results,
+                "Realtime Database Write": rtdb_write_results,
+                "Firestore Write": firestore_write_results,
+            },
+            all_auth_results=all_auth_results,
+        )
+
         return 0
+
+    def _emit_json_scan_document(
+        self,
+        *,
+        args,
+        scanner,
+        firebase_auth,
+        is_apk_mode,
+        package_project_ids,
+        extraction_results,
+        scan_sections,
+        all_auth_results,
+    ):
+        """Build a schema-conformant scan doc and write it to args.json_output."""
+        from ..output.json_writer import ScanDocumentBuilder
+
+        try:
+            from .. import __version__ as tool_version
+        except ImportError:
+            tool_version = "unknown"
+
+        if is_apk_mode and args.file:
+            input_type = "ipa" if str(args.file).lower().endswith(".ipa") else "apk"
+            input_source = str(args.file)
+            platform = "ios" if input_type == "ipa" else "android"
+        elif is_apk_mode and args.app_dir:
+            input_type = "folder"
+            input_source = str(args.app_dir)
+            platform = None
+        elif getattr(args, "scan_project_id", None) or getattr(args, "scan_project_id_file", None):
+            input_type = "project_ids"
+            input_source = args.scan_project_id or args.scan_project_id_file
+            platform = None
+        else:
+            input_type = "unknown"
+            input_source = None
+            platform = None
+
+        auth_identities = []
+        if getattr(args, "service_account", None):
+            auth_identities.append({"kind": "service_account", "ref": args.service_account})
+        if getattr(args, "email", None):
+            auth_identities.append({"kind": "user_token", "ref": args.email})
+
+        builder = ScanDocumentBuilder(
+            tool_version=tool_version,
+            scan_id=self.run_timestamp,
+            input_type=input_type,
+            input_source=input_source,
+            platform=platform,
+            config={
+                "check_with_auth": bool(getattr(args, "check_with_auth", False)),
+                "fuzz_collections": bool(getattr(args, "fuzz_collections", None)),
+                "fuzz_functions": bool(getattr(args, "fuzz_functions", False)),
+                "wordlist": getattr(args, "wordlist", None),
+                "rate_limit": getattr(args, "scan_rate", None),
+            },
+            auth_identities=auth_identities or None,
+        )
+
+        # Extraction bundle (APK/IPA only, single-file mode).
+        if is_apk_mode and args.file and extraction_results:
+            apk_path = Path(args.file)
+            bundle_type = "ipa" if apk_path.suffix.lower() == ".ipa" else "apk"
+            # extraction_results shape: Dict[package_name, List[(pattern_name, value)]]
+            # For single-file mode there's typically one package_name.
+            for package_name, items in extraction_results.items():
+                builder.set_bundle(
+                    bundle_type=bundle_type,
+                    path=str(apk_path),
+                    package_name=package_name,
+                    items=items,
+                )
+                break  # schema is one bundle per doc
+
+        # Build a project_id -> package_names map for per-finding attribution.
+        package_names_by_project = {}
+        if package_project_ids:
+            for package_name, project_ids in package_project_ids.items():
+                for pid in project_ids:
+                    package_names_by_project.setdefault(pid, []).append(package_name)
+
+        if extraction_results and package_project_ids:
+            extracted_by_project: dict[str, dict[str, list[str]]] = {}
+            for package_name, items in extraction_results.items():
+                project_ids = package_project_ids.get(package_name) or []
+                if not project_ids:
+                    continue
+                for pid in project_ids:
+                    entry = extracted_by_project.setdefault(pid, {})
+                    for category, value in items:
+                        bucket = entry.setdefault(category, [])
+                        if value not in bucket:
+                            bucket.append(value)
+            if extracted_by_project:
+                builder.set_extracted_items(extracted_by_project)
+
+        # Each section's auth results live on its sub-scanner, but the orchestrator
+        # has already aggregated them into all_auth_results (keyed by project_id).
+        # For write-section findings we also want auth results attached — they
+        # share the same scanner.all_authenticated_results buffer.
+        for title, section_results in scan_sections.items():
+            if not section_results:
+                continue
+            builder.add_scan_section(
+                section_title=title,
+                scan_results=section_results,
+                auth_results=all_auth_results,
+                package_names_by_project=package_names_by_project,
+            )
+
+        json_path = Path(
+            create_output_path(args.output_dir, "scan.json", self.run_timestamp)
+        )
+        builder.write(json_path)
+        print(f"\n{BLUE}[INF]{RESET} JSON scan document written to {json_path}")
 
     def _generate_auth_results_summary(self, scanner, firebase_auth, colorize=True):
         """Generate authentication results summary as a list of strings."""

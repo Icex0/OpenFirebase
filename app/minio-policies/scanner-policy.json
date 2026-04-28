@@ -1,0 +1,34 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadScanInputs",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::openfirebase-apks/bundles/*",
+        "arn:aws:s3:::openfirebase-apks/uploads/*"
+      ]
+    },
+    {
+      "Sid": "ListOwnPrefixesOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::openfirebase-apks"
+      ],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "bundles/*",
+            "uploads/*"
+          ]
+        }
+      }
+    }
+  ]
+}

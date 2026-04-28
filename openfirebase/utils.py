@@ -655,7 +655,7 @@ def get_apk_files(input_folder: Path) -> List[Path]:
             and input_folder.suffix.lower() in (".apk", ".ipa")
         ):
             print(f"{RED}[ERROR]{RESET} '{input_folder}' is a single bundle file.")
-            print(f"{RED}[ERROR]{RESET} Use -f/--file for single .apk/.ipa files, or -d/--apk-dir for directories containing them.")
+            print(f"{RED}[ERROR]{RESET} Use -f/--file for single .apk/.ipa files, or -d/--app-dir for directories containing them.")
         else:
             print(f"{RED}[ERROR]{RESET} No .apk or .ipa files found in {input_folder}")
         return []

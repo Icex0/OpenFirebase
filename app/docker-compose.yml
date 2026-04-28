@@ -1,0 +1,175 @@
+# Network topology
+# ----------------
+#   data-backend : postgres, minio, backend, minio-init
+#                  (the "trusted" data plane — full-privilege DB + MinIO
+#                   creds live on services attached here)
+#   data-scanner : postgres, minio, scanner
+#                  (the "untrusted" data plane — only scoped creds are
+#                   useful here; scanner is NOT on data-backend, so it
+#                   cannot reach the backend container at all)
+#   web          : backend, frontend
+#                  (HTTP surface)
+#
+# A scanner pop can therefore reach: postgres (as scanner_user, restricted)
+# and minio (as scanner user, restricted). It cannot reach the backend
+# container, cannot reach the frontend, and the creds it does have can't
+# touch user auth tables, other users' outputs, or perform DDL.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Consumed by the init script below to create scanner_user on
+      # first-time volume initialisation. Not exposed to any other service.
+      SCANNER_DB_PASSWORD: ${SCANNER_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - data-backend
+      - data-scanner
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - data-backend
+      - data-scanner
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      SCANNER_S3_ACCESS_KEY: ${SCANNER_S3_ACCESS_KEY}
+      SCANNER_S3_SECRET_KEY: ${SCANNER_S3_SECRET_KEY}
+    volumes:
+      - ./minio-init/init.sh:/init.sh:ro
+      - ./minio-policies:/policies:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    restart: "no"
+    networks:
+      - data-backend
+
+  backend:
+    build:
+      context: ..
+      dockerfile: app/backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      APP_SECRET: ${APP_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION}
+    ports:
+      - "8000:8000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    volumes:
+      - backend_tmp:/tmp
+    pids_limit: 512
+    networks:
+      - data-backend
+      - web
+
+  scanner:
+    # Dedicated minimal image — openfirebase + androguard + apksigner only.
+    # No FastAPI / fastapi-users / uvicorn; the web attack surface lives in
+    # the backend image. This is the sole container that parses
+    # attacker-controlled bundles, so it gets the full hardening set.
+    build:
+      context: ..
+      dockerfile: app/scanner/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      APP_SECRET: ${APP_SECRET}
+      # Scoped credentials only — scanner_user role + scanner MinIO user.
+      # A post-exploit attacker reading these env vars cannot touch the
+      # user auth table, other users' outputs, or perform DDL.
+      DATABASE_URL: ${SCANNER_DATABASE_URL}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${SCANNER_S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${SCANNER_S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    volumes:
+      - scanner_tmp:/tmp
+    pids_limit: 1024
+    # Only on the data-scanner network → cannot see the backend or frontend
+    # containers. Outbound internet (for Firebase probes) still works.
+    networks:
+      - data-scanner
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - web
+
+networks:
+  data-backend:
+  data-scanner:
+  web:
+
+volumes:
+  postgres_data:
+  minio_data:
+  backend_tmp:
+  scanner_tmp:

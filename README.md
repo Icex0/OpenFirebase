@@ -9,7 +9,7 @@
 <div align="center">
 
 [![GitHub stars](https://img.shields.io/github/stars/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/stargazers)
-[![License](https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-Custom%20NC%201.0.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)](https://www.python.org)
 [![GitHub issues](https://img.shields.io/github/issues/Icex0/OpenFirebase?style=flat-square)](https://github.com/Icex0/OpenFirebase/issues)
 
@@ -86,13 +86,13 @@ pipx install . --force
 #### Default Wordlists and Payloads
 
 OpenFirebase includes built-in wordlists and example payloads for write testing. These files must be explicitly specified in command line arguments. Feel free to use your own:
-- Use `--fuzz-functions openfirebase/wordlist/cloud-functions.txt` for Cloud Functions fuzzing
-- Use `--fuzz-collections openfirebase/wordlist/firestore-collections.txt` for Firestore collection fuzzing
+- Use `--fuzz-functions openfirebase/wordlist/cloud-functions-top-250.txt` for Cloud Functions fuzzing
+- Use `--fuzz-collections openfirebase/wordlist/firestore-collections-top-250.txt` for Firestore collection fuzzing
 - Use `--write-rtdb openfirebase/payloads/openfirebase.json` for RTDB write testing
 - Use `--write-storage openfirebase/payloads/openfirebase_storage_write_check.txt` for storage write testing
 - Use `--write-firestore "unauth_write_check"` for Firestore write testing (writes to `firestore_unauthenticated_access` collection)
 
-Wordlists for both `--fuzz-collections` (<code>openfirebase/wordlist/firestore-collections.txt</code>) and `--fuzz-functions` (<code>openfirebase/wordlist/cloud-functions.txt</code>) are sourced from [Icex0/firebase-wordlists](https://github.com/Icex0/firebase-wordlists), mined from public GitHub and ranked by real-world usage. Top 250 is used for both. Larger variants are available in that repo.
+Wordlists for both `--fuzz-collections` (<code>openfirebase/wordlist/firestore-collections-top-250.txt</code>) and `--fuzz-functions` (<code>openfirebase/wordlist/cloud-functions-top-250.txt</code>) are sourced from [Icex0/firebase-wordlists](https://github.com/Icex0/firebase-wordlists), mined from public GitHub and ranked by real-world usage. Top 250 is used for both. Larger variants are available in that repo.
 
 <details>
 <summary><strong>RTDB Write Payload</strong> (<code>openfirebase/payloads/openfirebase.json</code>)</summary>
@@ -111,6 +111,28 @@ OpenFirebase - Unauth Firebase write access found
 ```
 
 </details>
+
+## Web companion
+
+<div align="center">
+  <img src="assets/images/webapp_preview.png" alt="OpenFirebase web companion preview" width="800" />
+</div>
+
+A self-hostable web frontend lives in [`app/`](app/). Same scanning core as the CLI, with a queued worker, persisted scan history, live log streaming, multi-user auth, and inline result browsing.
+
+**Stack**: FastAPI + SQLAlchemy + Alembic (backend), React + Vite + TypeScript + Tailwind (frontend), Postgres + MinIO (storage), all wired up with Docker Compose. The scanner runs in an isolated container.
+
+```bash
+cd app
+cp .env.example .env
+docker compose up --build
+```
+
+- Frontend: http://localhost:8080
+- Backend API: http://localhost:8000
+- MinIO console: http://localhost:9001
+
+Rotate every secret in `.env` before exposing the stack beyond localhost. See [`app/README.md`](app/README.md) for details.
 
 ## How it works
 
@@ -259,7 +281,7 @@ When using the `--read-functions` option, OpenFirebase probes Cloud Functions en
 - **Fuzzing mode (`--fuzz-functions <wordlist>`)**: When a Google App ID is available, OpenFirebase first extracts the project number and probes the `gcf-v2-sources-<project_number>-<region>` GCS bucket across all known Cloud Functions regions. Regions whose source bucket returns 200/400/401/500 ("alive regions") are then brute-forced with the wordlist, avoiding wasted requests against regions where no functions are deployed. Results are deduplicated against already-known function names from extraction.
 - **Direct probing with `--project-id`**: `--function-name <names>` (comma-separated, callable protocol) and/or `--function-region <regions>` can be supplied; alternatively `--fuzz-functions <wordlist>` enables bucket-probe + enumeration. At least one of these is required when combining `--read-functions` with `--project-id` / `--project-id-file`.
 - **Region independence**: GCP treats each region as a fully independent deployment — the same function name can run different code in different regions. This means `us-central1/debug_info` and `europe-west1/debug_info` may behave differently, expose different data, or have different authentication configurations. Use `--function-region all` to probe all known regions (when using `--project-id` / `--project-id-file` mode).
-- **Wordlists**: The bundled `openfirebase/wordlist/cloud-functions.txt` uses the **top-250** list from [Icex0/firebase-wordlists](https://github.com/Icex0/firebase-wordlists) — callable function names ranked by distinct-repo frequency across real public Firebase projects. Larger lists (`top-500.txt`, `full.txt` with 6,683 names) are available in that repo if you want a wider enumeration surface; pass any of them via `--fuzz-functions <path>`.
+- **Wordlists**: `openfirebase/wordlist/cloud-functions-top-250.txt` is the **top-250** list from [Icex0/firebase-wordlists](https://github.com/Icex0/firebase-wordlists) — callable function names ranked by distinct-repo frequency across real public Firebase projects. Larger lists (`top-500.txt`, `full.txt` with 6,683 names) are available in that repo if you want a wider enumeration surface; pass any of them via `--fuzz-functions <path>`.
 - **Burp / proxy caveat**: If you run OpenFirebase through Burp with `-x`, disable **upstream** HTTP/2 in Burp: **Settings → Network → HTTP → HTTP/2** and uncheck "Default to HTTP/2 if the server supports it" (older Burp: Project options → HTTP → uncheck "Enable HTTP/2"). Note this is **not** the "Support HTTP/2" toggle on the Proxy Listener — that one controls client-to-Burp HTTP/2, not Burp-to-target. Without this, Burp forwards Google's `HTTP/2` status line verbatim, which Python's HTTP/1.1 client can't parse (`UnknownProtocol('HTTP/2')`) — regions beyond the first get falsely flagged as dead.
 
 </details>
@@ -442,13 +464,13 @@ openfirebase -d path/to/apks
 #### Full unauthenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access
-openfirebase -d /path/to/apks --read-all --write-all --write-storage ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb ./openfirebase/payloads/openfirebase.json --write-firestore "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb ./openfirebase/payloads/openfirebase.json --write-firestore "unauth_write_check_by_Icex0" --fuzz-collections ./openfirebase/wordlist/firestore-collections-top-250.txt
 ```
 
 #### Full authenticated read and write scan
 ```bash
 # Extract, scan all services, test read and write access with authentication
-openfirebase -d /path/to/apks --read-all --write-all --write-storage ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb ./openfirebase/payloads/openfirebase.json --write-firestore "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlist/firestore-collections.txt
+openfirebase -d /path/to/apks --read-all --write-all --write-storage ./openfirebase/payloads/openfirebase_storage_write_check.txt --write-rtdb ./openfirebase/payloads/openfirebase.json --write-firestore "unauth_write_check_by_Icex0" --check-with-auth --email pentester@company.com --password SecurePass123 --fuzz-collections ./openfirebase/wordlist/firestore-collections-top-250.txt
 ```
 
 #### Resume from extraction only results and perform all read scans
