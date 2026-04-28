@@ -125,7 +125,7 @@ A self-hostable web frontend lives in [`app/`](app/). Same scanning core as the 
 ```bash
 cd app
 cp .env.example .env
-docker compose up --build
+docker compose up --build -d
 ```
 
 - Frontend: http://localhost:8080
@@ -133,6 +133,8 @@ docker compose up --build
 - MinIO console: http://localhost:9001
 
 Rotate every secret in `.env` before exposing the stack beyond localhost. See [`app/README.md`](app/README.md) for details.
+
+> **Docker Desktop memory**: the default 8 GB is fine for typical scans. Bump to 12–16 GB if you're scanning many APKs/IPAs at once.
 
 ## How it works
 
