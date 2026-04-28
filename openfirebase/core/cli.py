@@ -473,6 +473,16 @@ def main(
         help="Path to wordlist for Cloud Functions enumeration (probes GCS source buckets for region detection)",
         rich_help_panel="Read Testing"
     ),
+    skip_gcs_probing: bool = Option(
+        False,
+        "--skip-gcs-probing",
+        help=(
+            "Skip GCS source bucket probing for project IDs with no extracted function URLs or callable names. "
+            "Note: no extracted functions does not mean fuzzing won't find any — only recommended when scanning "
+            "hundreds of apps and you want speed over accuracy"
+        ),
+        rich_help_panel="Read Testing"
+    ),
     read_all: bool = Option(
         False,
         "-ra", "--read-all",
@@ -631,7 +641,7 @@ def main(
     service_account: Optional[str] = Option(
         None,
         "--service-account", "-sa",
-        help="Service account email (client_email) for admin-level authentication via Google OAuth2 JWT flow (bypasses security rules)",
+        help="Service account email (client_email) for authentication via Google OAuth2 JWT flow. Access follows the account's IAM roles (admin-tier bypasses security rules; scoped accounts only get what IAM grants)",
         rich_help_panel="Service Account Authentication"
     ),
     private_key: Optional[str] = Option(
@@ -688,6 +698,7 @@ def main(
     args.function_region = function_region
     args.fuzz_functions = fuzz_functions is not None
     args.functions_wordlist = str(fuzz_functions) if fuzz_functions else None
+    args.skip_gcs_probing = skip_gcs_probing
     args.scan_all = read_all
     args.scan_rate = scan_rate
     args.fuzz_collections = str(fuzz_collections) if fuzz_collections else None

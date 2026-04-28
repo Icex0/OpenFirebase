@@ -82,7 +82,9 @@ class FirebaseAuth:
         """Authenticate using a service account via Google OAuth2 JWT flow.
 
         Signs a JWT with the private key and exchanges it at Google's OAuth2
-        token endpoint for a short-lived access token that bypasses security rules.
+        token endpoint for a short-lived access token. The token's effective
+        access depends on the service account's IAM roles — admin-tier roles
+        bypass Firebase security rules; scoped roles get only what IAM grants.
 
         Args:
             project_id: Firebase project ID

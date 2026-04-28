@@ -447,7 +447,7 @@ class OpenFirebaseOrchestrator:
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
             if has_sa:
-                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - will use admin-level access (bypasses security rules)")
+                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - access scope follows the account's IAM roles (admin-tier bypasses security rules)")
 
 
         # Initialize scanner and perform scanning
@@ -540,7 +540,7 @@ class OpenFirebaseOrchestrator:
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
             if has_sa:
-                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - will use admin-level access (bypasses security rules)")
+                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - access scope follows the account's IAM roles (admin-tier bypasses security rules)")
 
 
         # Initialize scanner
@@ -1139,7 +1139,7 @@ class OpenFirebaseOrchestrator:
             if getattr(args, "check_with_auth", False):
                 print(f"{BLUE}[INF]{RESET} Authentication enabled - will retry 401/403 responses with Firebase auth")
             if has_sa_auth:
-                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - will use admin-level access (bypasses security rules)")
+                print(f"{BLUE}[INF]{RESET} Service account authentication enabled - access scope follows the account's IAM roles (admin-tier bypasses security rules)")
 
         # Initialize scanner
         scanner = FirebaseScanner(
@@ -1564,6 +1564,7 @@ class OpenFirebaseOrchestrator:
                 google_app_ids=google_app_ids or None,
                 app_ids_by_project=app_ids_by_project or None,
                 callable_names_by_project=callable_names_by_project or None,
+                skip_gcs_probing=getattr(args, "skip_gcs_probing", False),
             )
 
             self._handle_scan_display(

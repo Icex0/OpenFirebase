@@ -562,6 +562,7 @@ class CloudFunctionsScanner(BaseScanner):
         google_app_ids: Set[str] = None,
         app_ids_by_project: Dict[str, Set[str]] = None,
         callable_names_by_project: Dict[str, Set[str]] = None,
+        skip_gcs_probing: bool = False,
     ) -> Dict[str, Dict[str, Dict[str, str]]]:
         """Scan Cloud Functions for multiple project IDs.
 
@@ -658,8 +659,33 @@ class CloudFunctionsScanner(BaseScanner):
             # and in which regions, so we can avoid probing dead projects/regions.
             alive_regions = None  # None = unknown (no project number); [] = known-empty
             project_urls = urls_by_project.get(project_id, set())
+            project_callables_extracted = (
+                callable_names_by_project.get(project_id, set())
+                if callable_names_by_project else set()
+            )
 
             project_number = project_number_by_project.get(project_id)
+            if (
+                skip_gcs_probing
+                and not project_urls
+                and not project_callables_extracted
+            ):
+                print(
+                    f"{YELLOW}[!]{RESET}  Skipping GCS source bucket probing for {project_id} "
+                    f"(no extracted function URLs or callable names; --skip-gcs-probing set)\n"
+                )
+                project_results["(skipped — --skip-gcs-probing, no extracted functions)"] = {
+                    "status": "skipped",
+                    "security": "SKIPPED",
+                    "message": "No extracted function URLs or callable names; GCS probing skipped via --skip-gcs-probing",
+                }
+                all_results[project_id] = project_results
+                if output_file:
+                    self._save_project_results_to_file(
+                        project_id, project_results, output_file, package_names
+                    )
+                continue
+
             if project_number:
                 print(
                     f"{BLUE}[INF]{RESET} Probing GCS source buckets across {len(CLOUD_FUNCTIONS_REGIONS)} regions "

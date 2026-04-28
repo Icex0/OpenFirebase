@@ -208,7 +208,9 @@ class BaseScanner(ABC):
         if self.firebase_auth:
             project_id = self._extract_project_id_from_url(url)
             if project_id:
-                # For service account auth: always try (bypasses security rules, may return more data)
+                # For service account auth: always try (its IAM roles may grant
+                # access regardless of the unauth response — admin-tier bypasses
+                # security rules entirely; scoped roles still beat anon).
                 # For regular auth: only retry on 401/403
                 should_try_auth = (
                     self.firebase_auth.has_sa_token(project_id)

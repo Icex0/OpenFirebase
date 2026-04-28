@@ -15,7 +15,7 @@
 
 Automated Firebase security scanner that extracts Firebase configurations from Android APKs and iOS IPAs and performs unauthenticated and/or authenticated read and/or write scanning of common Firebase services (Realtime Database, Firestore, Storage, Remote Config and Cloud functions), including support for all known service URL formats.
 
-Detects accidentally embedded service account credentials for admin-level access that bypasses security rules.
+Detects accidentally embedded service account credentials. Admin-tier service accounts (e.g. `firebase-adminsdk`) grant access that bypasses security rules; scoped accounts grant whatever their IAM roles allow.
 
 Supports multiple inputs including Android APK extraction (DEX string pool + resources), iOS IPA extraction via GoogleService-Info.plist and Mach-O string scanning, and single or multiple project IDs. This means you can also use this tool if you find Firebase data in web applications.
 
@@ -120,8 +120,6 @@ OpenFirebase - Unauth Firebase write access found
 
 A self-hostable web frontend lives in [`app/`](app/). Same scanning core as the CLI, with a queued worker, persisted scan history, live log streaming, multi-user auth, and inline result browsing.
 
-**Stack**: FastAPI + SQLAlchemy + Alembic (backend), React + Vite + TypeScript + Tailwind (frontend), Postgres + MinIO (storage), all wired up with Docker Compose. The scanner runs in an isolated container.
-
 ```bash
 cd app
 cp .env.example .env
@@ -132,7 +130,7 @@ docker compose up --build -d
 - Backend API: http://localhost:8000
 - MinIO console: http://localhost:9001
 
-Rotate every secret in `.env` before exposing the stack beyond localhost. See [`app/README.md`](app/README.md) for details.
+Rotate every secret in `.env` before exposing the stack beyond localhost!
 
 > **Docker Desktop memory**: the default 8 GB is fine for typical scans. Bump to 12–16 GB if you're scanning many APKs/IPAs at once.
 
@@ -302,6 +300,7 @@ When using the `--read-functions` option, OpenFirebase probes Cloud Functions en
 - **Fuzzing mode (`--fuzz-functions <wordlist>`)**: When a Google App ID is available, OpenFirebase first extracts the project number and probes the `gcf-v2-sources-<project_number>-<region>` GCS bucket across all known Cloud Functions regions. Regions whose source bucket returns 200/400/401/500 ("alive regions") are then brute-forced with the wordlist, avoiding wasted requests against regions where no functions are deployed. Results are deduplicated against already-known function names from extraction.
 - **Direct probing with `--project-id`**: `--function-name <names>` (comma-separated, callable protocol) and/or `--function-region <regions>` can be supplied; alternatively `--fuzz-functions <wordlist>` enables bucket-probe + enumeration. At least one of these is required when combining `--read-functions` with `--project-id` / `--project-id-file`.
 - **Region independence**: GCP treats each region as a fully independent deployment — the same function name can run different code in different regions. This means `us-central1/debug_info` and `europe-west1/debug_info` may behave differently, expose different data, or have different authentication configurations. Use `--function-region all` to probe all known regions (when using `--project-id` / `--project-id-file` mode).
+- **`--skip-gcs-probing`**: Skips the GCS source bucket probe (and all subsequent function probes) for any project ID where extraction yielded no function URLs and no callable names. Useful when scanning hundreds of apps and you want speed over accuracy — but be aware that an APK/IPA producing no extracted functions does **not** mean the project has no Cloud Functions; fuzzing with `--fuzz-functions` against the GCS-probe-derived alive regions can still find publicly invokable functions. Only recommended when throughput matters more than completeness.
 - **Wordlists**: `openfirebase/wordlist/cloud-functions-top-250.txt` is the **top-250** list from [Icex0/firebase-wordlists](https://github.com/Icex0/firebase-wordlists) — callable function names ranked by distinct-repo frequency across real public Firebase projects. Larger lists (`top-500.txt`, `full.txt` with 6,683 names) are available in that repo if you want a wider enumeration surface; pass any of them via `--fuzz-functions <path>`.
 - **Burp / proxy caveat**: If you run OpenFirebase through Burp with `-x`, disable **upstream** HTTP/2 in Burp: **Settings → Network → HTTP → HTTP/2** and uncheck "Default to HTTP/2 if the server supports it" (older Burp: Project options → HTTP → uncheck "Enable HTTP/2"). Note this is **not** the "Support HTTP/2" toggle on the Proxy Listener — that one controls client-to-Burp HTTP/2, not Burp-to-target. Without this, Burp forwards Google's `HTTP/2` status line verbatim, which Python's HTTP/1.1 client can't parse (`UnknownProtocol('HTTP/2')`) — regions beyond the first get falsely flagged as dead.
 
@@ -325,7 +324,9 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 <details>
 <summary><strong>Service Account Authentication</strong></summary>
 
-OpenFirebase detects Firebase service account credentials (`client_email` + `private_key`) accidentally embedded in APK files. Service accounts with admin-level roles (e.g. `firebase-adminsdk`) bypass all Firebase security rules, granting unrestricted access.
+OpenFirebase detects Firebase service account credentials (`client_email` + `private_key`) accidentally embedded in APK files. Impact depends on the IAM roles bound to the account:
+- **Admin-tier** (`Firebase Admin SDK Service Agent`, `Owner`, `Editor`) — bypasses all Firebase security rules, full read/write across every service. The default `firebase-adminsdk-...@<project>.iam.gserviceaccount.com` key is in this tier.
+- **Scoped** (e.g. `roles/firebasedatabase.viewer`, custom roles) — limited to whatever IAM grants. Still a valid finding, just lower impact. Inspect the key's permissions with a tool like [FireSA](https://github.com/Icex0/FireSA).
 
 #### Detection
 - **JSON service account files**: Reads `assets/`, `res/raw/`, and root-level JSON files directly from the APK and parses any containing `"type": "service_account"` with `client_email` and `private_key` fields
@@ -339,8 +340,8 @@ When credentials are found (or manually provided via `--service-account` and `--
 
 Results using the service account token are labeled `PUBLIC_SA` to distinguish them from regular authenticated results (`PUBLIC_AUTH`).
 
-#### What a Service Account Can Access
-An admin-level service account doesn't just bypass security rules for read/write — it grants access to the full Firebase Admin SDK, including:
+#### What an Admin-tier Service Account Can Access
+An admin-tier service account doesn't just bypass security rules for read/write — it grants access to the full Firebase Admin SDK, including:
 - **Realtime Database**: Read/write any path, regardless of security rules
 - **Firestore**: Read/write any collection/document, regardless of security rules
 - **Storage**: Read/write any file in any bucket, regardless of security rules
@@ -423,6 +424,7 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--function-name` | | Cloud Function name(s) to test with --read-functions (comma-separated, requires --project-id) |
 | `--function-region` | | Region(s) for Cloud Functions testing (default: us-central1, comma-separated for multiple) |
 | `--fuzz-functions` | | Path to wordlist for Cloud Functions enumeration (probes GCS source buckets for region detection) |
+| `--skip-gcs-probing` | | Skip GCS source bucket probing for project IDs with no extracted function URLs or callable names. Note: no extracted functions does not mean fuzzing won't find any — only recommended when scanning hundreds of apps and you want speed over accuracy |
 | `--read-all` | `-ra` | Test Firebase databases, storage buckets, Remote Config, Firestore, and Cloud Functions for unauthorized access |
 | `--scan-rate` | `-l` | Rate limit for scanning (requests per second) |
 | `--fuzz-collections` | | Path to wordlist file for Firestore collection fuzzing when a publicly accessible database is found |
@@ -464,7 +466,7 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 ### Service Account Authentication
 | Argument | Description |
 |----------|-------------|
-| `--service-account` | Service account email (client_email) for admin-level authentication via Google OAuth2 JWT flow (bypasses security rules) |
+| `--service-account` | Service account email (client_email) for authentication via Google OAuth2 JWT flow. Access scope follows the account's IAM roles (admin-tier bypasses security rules; scoped accounts get only their granted permissions) |
 | `--private-key` | Path to PEM private key file for service account authentication (required with --service-account). Also accepts inline key strings with `\n` escapes |
 
 
