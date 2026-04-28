@@ -136,6 +136,25 @@ Rotate every secret in `.env` before exposing the stack beyond localhost. See [`
 
 > **Docker Desktop memory**: the default 8 GB is fine for typical scans. Bump to 12–16 GB if you're scanning many APKs/IPAs at once.
 
+### Reverse proxy with Caddy (optional)
+
+Caddy is gated behind a compose profile and routes `/api/*` to the backend.
+
+**Local** — in `app/.env`:
+```
+VITE_API_BASE_URL=/api
+CADDY_DOMAIN=:80
+```
+```bash
+docker compose --profile caddy up -d 
+```
+
+**Production** — same as above, plus:
+```
+CADDY_DOMAIN=app.example.com   # auto-TLS via Let's Encrypt
+HOST_BIND=127.0.0.1            # backend/frontend/minio loopback-only
+```
+
 ## How it works
 
 <details>

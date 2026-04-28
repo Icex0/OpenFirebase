@@ -46,8 +46,8 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${HOST_BIND:-0.0.0.0}:9000:9000"
+      - "${HOST_BIND:-0.0.0.0}:9001:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -98,7 +98,7 @@ services:
       S3_BUCKET: ${S3_BUCKET}
       S3_REGION: ${S3_REGION}
     ports:
-      - "8000:8000"
+      - "${HOST_BIND:-0.0.0.0}:8000:8000"
     cap_drop:
       - ALL
     security_opt:
@@ -157,9 +157,31 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     ports:
-      - "8080:8080"
+      - "${HOST_BIND:-0.0.0.0}:8080:8080"
     depends_on:
       - backend
+    networks:
+      - web
+
+  # Optional reverse proxy. Enable with:  docker compose --profile caddy up
+  # Local:  CADDY_DOMAIN=:80               (http://localhost)
+  # Prod:   CADDY_DOMAIN=app.example.com   (Caddy auto-issues TLS via ACME)
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-:80}
+    ports:
+      - "${CADDY_BIND:-0.0.0.0}:80:80"
+      - "${CADDY_BIND:-0.0.0.0}:443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
     networks:
       - web
 
@@ -173,3 +195,5 @@ volumes:
   minio_data:
   backend_tmp:
   scanner_tmp:
+  caddy_data:
+  caddy_config:
