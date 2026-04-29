@@ -195,6 +195,21 @@ export function OptionsForm({
             disabled={disabled}
           />
         </Field>
+
+        <div className="space-y-1">
+          <Toggle
+            label="Skip GCS source bucket probing for projects with no extracted functions"
+            checked={options.skip_gcs_probing}
+            onChange={(v) => set("skip_gcs_probing", v)}
+            disabled={disabled}
+          />
+          <p className="px-1 text-[11px] leading-snug text-ink-400">
+            No extracted functions does not mean fuzzing won't find any — only
+            recommended when scanning hundreds of apps and you want speed over
+            accuracy. Skips Cloud Functions probing entirely (including fuzzing)
+            for projects with no extracted function URLs or callable names.
+          </p>
+        </div>
       </Section>
 
       <Section

@@ -25,6 +25,8 @@ export interface ScanOptions {
   fuzz_functions: WordlistChoice;
   collection_name: string | null;
 
+  skip_gcs_probing: boolean;
+
   function_name: string | null;
   function_region: string | null;
 

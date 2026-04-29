@@ -1,8 +1,14 @@
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
+
+try:
+    APP_VERSION = _pkg_version("openfirebase-web-backend")
+except PackageNotFoundError:
+    APP_VERSION = "0.0.0+unknown"
 
 from .auth.router import router as auth_router
 from .config import get_settings
@@ -37,7 +43,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="OpenFirebase Web",
-        version="0.1.0",
+        version=APP_VERSION,
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -54,6 +60,10 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/info")
+    async def info() -> dict[str, str]:
+        return {"version": app.version}
 
     return app
 

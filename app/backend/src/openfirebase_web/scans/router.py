@@ -132,6 +132,16 @@ async def upload_scan(
         for f in files:
             if not f.filename or not f.filename.lower().endswith((".apk", ".ipa")):
                 raise HTTPException(400, f"Upload must be .apk or .ipa: {f.filename!r}")
+        # A Google OAuth ID token is bound to one app's OAuth client, so it
+        # only authenticates the single project that token was captured from.
+        # Mirror the CLI's --google-id-token + --app-dir rejection.
+        if opts.google_id_token and len(files) > 1:
+            raise HTTPException(
+                400,
+                "google_id_token cannot be used with multiple bundle uploads — "
+                "the token is bound to one app's OAuth client. Upload only the "
+                "matching APK/IPA, or switch to manual mode with the matching project ID.",
+            )
     else:
         if files:
             raise HTTPException(400, "Manual mode does not accept bundle files")

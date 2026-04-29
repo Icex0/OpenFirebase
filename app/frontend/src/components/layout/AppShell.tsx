@@ -1,11 +1,36 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
-import { setToken } from "@/lib/api";
+import { api, setToken } from "@/lib/api";
 import { cn } from "@/lib/cn";
+
+const REPO_URL = "https://github.com/Icex0/OpenFirebase";
+const COPYRIGHT_YEAR = "2026";
+const COPYRIGHT_HOLDER = "Icex0";
+
+interface AppInfo {
+  version: string;
+}
 
 export function AppShell() {
   const navigate = useNavigate();
+  const [info, setInfo] = useState<AppInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<AppInfo>("/info").then(
+      (res) => {
+        if (!cancelled) setInfo(res);
+      },
+      () => {
+        // Version is non-essential; silently degrade.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const logout = () => {
     setToken(null);
@@ -22,6 +47,11 @@ export function AppShell() {
               <span className="font-mono text-[13px] uppercase tracking-[0.18em] text-ink-200">
                 OpenFirebase
               </span>
+              {info?.version && (
+                <span className="font-mono text-[10px] text-ink-500">
+                  v{info.version}
+                </span>
+              )}
             </div>
             <nav className="flex items-center gap-1 text-sm">
               <NavItem to="/scans">Scans</NavItem>
@@ -36,6 +66,22 @@ export function AppShell() {
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
         <Outlet />
       </main>
+      <footer className="border-t border-ink-700/60 bg-ink-950/60 py-3">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-6 text-[11px] text-ink-500">
+          <span>
+            © {COPYRIGHT_YEAR} {COPYRIGHT_HOLDER} · OpenFirebase
+            {info?.version && ` v${info.version}`}
+          </span>
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-dotted hover:text-ink-300"
+          >
+            GitHub
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

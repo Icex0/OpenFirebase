@@ -152,6 +152,11 @@ class ScanOptions(BaseModel):
     fuzz_functions: WordlistChoice = "off"
     collection_name: str | None = Field(default=None, max_length=256)
 
+    # Speed-vs-accuracy tradeoff for Cloud Functions probing. When true, project
+    # IDs with no extracted function URLs or callable names skip the GCS source
+    # bucket probe entirely (and therefore skip fuzzing for that project too).
+    skip_gcs_probing: bool = False
+
     # Cloud Functions targeting (manual mode mostly).
     function_name: str | None = Field(default=None, max_length=512)
     function_region: str | None = Field(default=None, max_length=256)
@@ -336,6 +341,18 @@ class ScanOptions(BaseModel):
             raise ValueError(
                 "service account email and private key must be provided together"
             )
+
+        # A Google OAuth ID token is bound to one Firebase project's OAuth
+        # client (for Android, also to package_name + SHA-1), so it only
+        # authenticates the project whose client issued it. Mirror the CLI's
+        # single-project rule from validate_google_id_token_options.
+        if self.google_id_token and self.mode == "manual":
+            ids = [p for p in (self.project_ids or "").split(",") if p]
+            if len(ids) > 1:
+                raise ValueError(
+                    "google_id_token only supports a single project ID — "
+                    "the token is bound to one Firebase project's OAuth client"
+                )
 
         if self.mode == "manual":
             ids = [p for p in (self.project_ids or "").split(",") if p]

@@ -109,10 +109,16 @@ def build_argv(
         if private_key_file is not None:
             argv.extend(["--private-key", str(private_key_file)])
     else:
-        # App mode: always -d/--app-dir (single app is a 1-file dir).
+        # App mode: a single uploaded APK/IPA goes through --file so it stays
+        # compatible with flags that the CLI rejects against --app-dir
+        # (e.g. --google-id-token). Multi-file bundles still use --app-dir.
         if input_dir is None:
             raise ScannerError("app mode requires an input directory")
-        argv.extend(["--app-dir", str(input_dir)])
+        bundle_files = sorted(p for p in input_dir.iterdir() if p.is_file())
+        if len(bundle_files) == 1:
+            argv.extend(["--file", str(bundle_files[0])])
+        else:
+            argv.extend(["--app-dir", str(input_dir)])
 
     if options.read_rtdb:
         argv.append("--read-rtdb")
@@ -144,6 +150,9 @@ def build_argv(
     )
     if ff is not None:
         argv.extend(["--fuzz-functions", str(ff)])
+
+    if options.skip_gcs_probing:
+        argv.append("--skip-gcs-probing")
 
     if options.write_rtdb:
         payload = write_rtdb_custom or _bundled_payload("openfirebase.json")

@@ -211,6 +211,80 @@ def validate_auth_options(
                 )
 
 
+def validate_google_id_token_options(
+    google_id_token: Optional[str],
+    project_id: Optional[str],
+    project_id_file: Optional[Path],
+    file: Optional[str],
+    app_dir: Optional[str],
+    resume: Optional[Path],
+) -> None:
+    """Validate that --google-id-token is used with exactly one project in scope.
+
+    A Google OAuth ID token's `aud` claim is the OAuth client ID it was issued
+    to, and Firebase's signInWithIdp validates that audience against the OAuth
+    client(s) registered on the Google sign-in provider of a single Firebase
+    project. So a captured token only resolves at the one project (typically
+    one APK/IPA) it was captured from.
+    """
+    if not google_id_token:
+        return
+
+    if app_dir:
+        raise typer.BadParameter(
+            "--google-id-token cannot be used with --app-dir. "
+            "A Google OAuth ID token is bound to a single Firebase project's OAuth client "
+            "(for Android, also to package_name + SHA-1), so it will only authenticate against "
+            "the one APK/IPA it was captured from. Use --file with a single APK/IPA, "
+            "or --project-id with the matching single project ID, instead."
+        )
+
+    if resume:
+        raise typer.BadParameter(
+            "--google-id-token cannot be used with --resume. "
+            "A resumed scan may span multiple projects, but a Google OAuth ID token only "
+            "authenticates against the single project whose OAuth client issued it."
+        )
+
+    if project_id:
+        project_ids = [pid.strip() for pid in project_id.split(",") if pid.strip()]
+        if len(project_ids) > 1:
+            raise typer.BadParameter(
+                "--google-id-token with --project-id only supports a single project ID. "
+                f"You provided {len(project_ids)} project IDs. "
+                "A Google OAuth ID token only authenticates against the single project whose "
+                "OAuth client issued it."
+            )
+
+    if project_id_file:
+        try:
+            with open(project_id_file, encoding="utf-8") as f:
+                project_ids_from_file = [
+                    line.strip() for line in f.readlines() if line.strip()
+                ]
+            if len(project_ids_from_file) > 1:
+                raise typer.BadParameter(
+                    "--google-id-token with --project-id-file only supports a single project ID. "
+                    f"Your file contains {len(project_ids_from_file)} project IDs. "
+                    "A Google OAuth ID token only authenticates against the single project whose "
+                    "OAuth client issued it."
+                )
+            if len(project_ids_from_file) == 0:
+                raise typer.BadParameter(
+                    f"--project-id-file contains no valid project IDs: {project_id_file}"
+                )
+        except FileNotFoundError:
+            raise typer.BadParameter(
+                f"Project ID file not found: {project_id_file}"
+            )
+        except typer.BadParameter:
+            raise
+        except Exception as e:
+            raise typer.BadParameter(
+                f"Error reading project ID file {project_id_file}: {e}"
+            )
+
+
 def validate_remote_config_options(
     scan_config: bool,
     scan_all: bool,
@@ -670,6 +744,7 @@ def main(
     validate_fuzz_functions(fuzz_functions)
     validate_write_options(write_storage, write_firestore, write_rtdb, write_all)
     validate_auth_options(check_with_auth, email, password, project_id, project_id_file, api_key, google_id_token)
+    validate_google_id_token_options(google_id_token, project_id, project_id_file, file, app_dir, resume)
     validate_remote_config_options(read_config, read_all, project_id, project_id_file, api_key, app_id, cert_sha1, package_name)
     private_key_content = validate_service_account_options(service_account, private_key)
 

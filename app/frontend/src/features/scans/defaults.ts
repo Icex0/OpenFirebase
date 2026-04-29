@@ -13,6 +13,8 @@ export const DEFAULT_OPTIONS: ScanOptions = {
   fuzz_functions: "off",
   collection_name: null,
 
+  skip_gcs_probing: false,
+
   function_name: null,
   function_region: null,
 
