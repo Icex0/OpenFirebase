@@ -9,11 +9,12 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/cn";
 import type { Finding, Project } from "@/lib/types";
 
-import { downloadScan } from "./api";
 import { scanSubjects } from "./defaults";
+import { ExportDialog } from "./components/ExportDialog";
 import { ExtractedItems } from "./components/ExtractedItems";
 import { FindingsTable } from "./components/FindingsTable";
 import { LiveTerminal } from "./components/LiveTerminal";
+import { RescanDialog } from "./components/RescanDialog";
 import { ScanSettingsButton } from "./components/ScanSettingsButton";
 import { StageTimeline } from "./components/StageTimeline";
 import { useCancelScan, useRescanScan, useScan } from "./hooks";
@@ -45,6 +46,8 @@ export function ScanDetailPage() {
   const [authStatusFilter, setAuthStatusFilter] = useState<string>(ALL);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [view, setView] = useState<ProjectTab>("findings");
+  const [rescanOpen, setRescanOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // Reset collapse state when the underlying scan changes.
   useEffect(() => {
@@ -231,22 +234,15 @@ export function ScanDetailPage() {
               </Button>
             )}
             {data.status === "done" && (
-              <Button
-                variant="ghost"
-                onClick={() => downloadScan(data.id, `scan-${data.id}.json`)}
-              >
-                Export JSON
+              <Button variant="ghost" onClick={() => setExportOpen(true)}>
+                Export…
               </Button>
             )}
             {data.status !== "queued" && data.status !== "running" && (
               <Button
                 variant="ghost"
                 disabled={rescan.isPending}
-                onClick={() =>
-                  rescan.mutate(data.id, {
-                    onSuccess: (next) => navigate(`/scans/${next.id}`),
-                  })
-                }
+                onClick={() => setRescanOpen(true)}
               >
                 Rescan
               </Button>
@@ -377,6 +373,7 @@ export function ScanDetailPage() {
       {filteredProjects.map((p) => (
         <ProjectCard
           key={p.id}
+          scanId={data.id}
           project={p}
           collapsed={!!collapsed[p.id]}
           onToggle={() =>
@@ -386,17 +383,56 @@ export function ScanDetailPage() {
           view={view}
         />
       ))}
+
+      <ExportDialog
+        open={exportOpen}
+        scan={data}
+        onClose={() => setExportOpen(false)}
+      />
+
+      <RescanDialog
+        open={rescanOpen}
+        filename={data.filename}
+        loading={rescan.isPending}
+        onCancel={() => setRescanOpen(false)}
+        onSame={() =>
+          rescan.mutate(
+            { id: data.id },
+            {
+              onSuccess: (next) => {
+                setRescanOpen(false);
+                navigate(`/scans/${next.id}`);
+              },
+            },
+          )
+        }
+        onChange={() => {
+          const mode = data.options?.mode === "manual" ? "manual" : "bundle";
+          const path = mode === "manual" ? "/scans/new/manual" : "/scans/new/bundle";
+          setRescanOpen(false);
+          navigate(path, {
+            state: {
+              rescanFromId: data.id,
+              rescanFilename: data.filename,
+              rescanBundleFilenames: data.bundle_filenames ?? [],
+              rescanOptions: data.options ?? {},
+            },
+          });
+        }}
+      />
     </div>
   );
 }
 
 function ProjectCard({
+  scanId,
   project: p,
   collapsed,
   onToggle,
   live,
   view,
 }: {
+  scanId: string;
   project: Project;
   collapsed: boolean;
   onToggle: () => void;
@@ -467,7 +503,9 @@ function ProjectCard({
           <SurfaceBody className="space-y-4">
             {tab === "findings" ? (
               <>
-                {p.findings.length > 0 && <FindingsTable findings={p.findings} />}
+                {p.findings.length > 0 && (
+                  <FindingsTable scanId={scanId} findings={p.findings} />
+                )}
                 {p.findings.length === 0 && live && (
                   <p className="font-mono text-[11px] uppercase tracking-wider text-ink-400">
                     Scanning… results will appear as they're produced.

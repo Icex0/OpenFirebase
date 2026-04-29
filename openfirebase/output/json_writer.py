@@ -277,6 +277,11 @@ class ScanDocumentBuilder:
                 "security": security,
                 "message": unauth_result.get("message", ""),
                 "response_content": _truncate(unauth_result.get("response_content")),
+                "response_content_full": _truncate(
+                    unauth_result.get("response_content_full")
+                    or unauth_result.get("response_content"),
+                    limit=100_000,
+                ),
                 "verdict": derive_unauth_verdict(service, status, security),
             },
             "auth": None,
@@ -292,6 +297,11 @@ class ScanDocumentBuilder:
                 "security": a_security,
                 "message": auth_result.get("message", ""),
                 "response_content": _truncate(auth_result.get("response_content")),
+                "response_content_full": _truncate(
+                    auth_result.get("response_content_full")
+                    or auth_result.get("response_content"),
+                    limit=100_000,
+                ),
                 "verdict": derive_auth_verdict(service, a_status, a_security),
                 "identity": identity,
             }

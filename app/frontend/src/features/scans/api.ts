@@ -1,5 +1,11 @@
 import { ApiError, api, API_BASE, getToken } from "@/lib/api";
-import type { LogLine, ScanDetail, ScanOptions, ScanSummary } from "@/lib/types";
+import type {
+  LogLine,
+  ResponseBody,
+  ScanDetail,
+  ScanOptions,
+  ScanSummary,
+} from "@/lib/types";
 
 export interface UploadProgress {
   loaded: number;
@@ -12,6 +18,16 @@ export async function listScans(): Promise<ScanSummary[]> {
 
 export async function getScan(id: string): Promise<ScanDetail> {
   return api.get<ScanDetail>(`/scans/${id}`);
+}
+
+export async function getFindingBody(
+  scanId: string,
+  findingId: string,
+  probe: "unauth" | "auth",
+): Promise<ResponseBody> {
+  return api.get<ResponseBody>(
+    `/scans/${scanId}/findings/${findingId}/body?probe=${probe}`,
+  );
 }
 
 export interface UploadPayload {
@@ -86,8 +102,16 @@ export async function deleteScan(id: string): Promise<void> {
   return api.del<void>(`/scans/${id}`);
 }
 
-export async function rescanScan(id: string): Promise<ScanSummary> {
-  return api.post<ScanSummary>(`/scans/${id}/rescan`);
+export async function rescanScan(
+  id: string,
+  newOptions?: ScanOptions,
+): Promise<ScanSummary> {
+  // ``options: null`` reuses the original scan's options; a populated value
+  // overrides them. The backend wraps it in a RescanRequest envelope so
+  // there's no ambiguity between "no override" and "empty options".
+  return api.post<ScanSummary>(`/scans/${id}/rescan`, {
+    options: newOptions ?? null,
+  });
 }
 
 export async function cancelScan(id: string): Promise<void> {

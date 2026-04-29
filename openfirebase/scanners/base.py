@@ -148,6 +148,7 @@ class BaseScanner(ABC):
 
         if response_text:
             result["response_content"] = self._truncate_response_content(response_text)
+            result["response_content_full"] = response_text
 
         result.update(kwargs)
         return result
@@ -476,8 +477,10 @@ class BaseScanner(ABC):
             # Store response content, truncating if too long
             if response.text is not None:
                 auth_result["response_content"] = self._truncate_response_content(response.text)
+                auth_result["response_content_full"] = response.text
             else:
                 auth_result["response_content"] = ""
+                auth_result["response_content_full"] = ""
 
             # Tag storage results with which access system governs the URL
             # so console/file output can distinguish Firebase Rules vs GCS IAM.
@@ -1112,7 +1115,8 @@ class BaseScanner(ABC):
                         "message": auth_message,
                         "accessible": True,
                         "security": auth_security,
-                        "response_content": auth_result.get("response_content", "")
+                        "response_content": auth_result.get("response_content", ""),
+                        "response_content_full": auth_result.get("response_content_full", ""),
                     }
 
         if not open_results:

@@ -14,8 +14,16 @@ class ProbeResult(BaseModel):
     security: str
     verdict: str
     message: str | None = None
-    response_content: str | None = None
+    # Whether a captured response body is available for this probe. The body
+    # itself is fetched lazily via /scans/{id}/findings/{fid}/body to keep the
+    # detail payload small (RC responses can be hundreds of KB each).
+    has_body: bool = False
     identity: dict[str, Any] | None = None
+
+
+class ResponseBodyRead(BaseModel):
+    content: str
+    truncated: bool
 
 
 class FindingRead(BaseModel):
@@ -397,6 +405,19 @@ class ScanOptions(BaseModel):
 
 
 # ---------- Logs ----------
+
+class RescanRequest(BaseModel):
+    """Body for ``POST /scans/{id}/rescan``.
+
+    ``options=None`` (the default) means "reuse the original scan's options".
+    Pass a populated ``ScanOptions`` to run the rescan with a different
+    configuration. Wrapping the override in a request envelope avoids the
+    "empty body vs. empty options" ambiguity that ``ScanOptions | None`` at
+    the body root would introduce.
+    """
+
+    options: ScanOptions | None = None
+
 
 class LogLine(BaseModel):
     seq: int

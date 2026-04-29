@@ -68,8 +68,13 @@ export interface ProbeResult {
   security: string;
   verdict: Verdict;
   message: string | null;
-  response_content?: string | null;
+  has_body: boolean;
   identity?: { kind?: string; ref?: string } | null;
+}
+
+export interface ResponseBody {
+  content: string;
+  truncated: boolean;
 }
 
 export interface Finding {

@@ -16,6 +16,7 @@ const SERVICE_LABEL: Record<Finding["service"], string> = {
 };
 
 interface Props {
+  scanId: string;
   findings: Finding[];
 }
 
@@ -23,7 +24,7 @@ type Filter = Verdict | "all";
 type SortKey = "service" | "probe" | "url" | "unauth" | "auth";
 type SortDir = "asc" | "desc";
 
-export function FindingsTable({ findings }: Props) {
+export function FindingsTable({ scanId, findings }: Props) {
   const [filter, setFilter] = useState<Filter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("unauth");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -141,7 +142,11 @@ export function FindingsTable({ findings }: Props) {
           </tbody>
         </table>
       </div>
-      <FindingDetailDrawer finding={active} onClose={() => setActive(null)} />
+      <FindingDetailDrawer
+        scanId={scanId}
+        finding={active}
+        onClose={() => setActive(null)}
+      />
     </div>
   );
 }

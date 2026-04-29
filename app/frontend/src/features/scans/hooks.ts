@@ -1,8 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ScanDetail } from "@/lib/types";
+import type { ScanDetail, ScanOptions } from "@/lib/types";
 
-import { cancelScan, deleteScan, getScan, listScans, rescanScan, uploadScan } from "./api";
+import {
+  cancelScan,
+  deleteScan,
+  getFindingBody,
+  getScan,
+  listScans,
+  rescanScan,
+  uploadScan,
+} from "./api";
 
 const SCANS_KEY = ["scans"] as const;
 
@@ -52,8 +60,25 @@ export function useDeleteScan() {
 export function useRescanScan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: rescanScan,
+    mutationFn: ({ id, options }: { id: string; options?: ScanOptions }) =>
+      rescanScan(id, options),
     onSuccess: () => qc.invalidateQueries({ queryKey: SCANS_KEY }),
+  });
+}
+
+export function useFindingBody(
+  scanId: string | undefined,
+  findingId: string | undefined,
+  probe: "unauth" | "auth",
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["finding-body", scanId, findingId, probe],
+    queryFn: () => getFindingBody(scanId!, findingId!, probe),
+    enabled: enabled && Boolean(scanId) && Boolean(findingId),
+    // Bodies are immutable for a given finding — cache aggressively.
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
   });
 }
 

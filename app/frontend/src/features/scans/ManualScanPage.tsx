@@ -1,14 +1,22 @@
 import { useState, type ChangeEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import type { ScanOptions } from "@/lib/types";
 
 import { OptionsForm, type OptionsFormValue } from "./components/OptionsForm";
 import { DEFAULT_OPTIONS, projectScopedCredWarning, scanOptionError, validateRtdbJson } from "./defaults";
-import { useUploadScan } from "./hooks";
+import { useRescanScan, useUploadScan } from "./hooks";
+
+interface RescanState {
+  rescanFromId: string;
+  rescanFilename: string;
+  rescanBundleFilenames: string[];
+  rescanOptions: Partial<ScanOptions>;
+}
 
 const EMPTY_FORM: OptionsFormValue = {
   options: { ...DEFAULT_OPTIONS, mode: "manual" },
@@ -20,8 +28,20 @@ const EMPTY_FORM: OptionsFormValue = {
 
 export function ManualScanPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const rescanState = (location.state as RescanState | null) ?? null;
+  const isRescan = Boolean(rescanState?.rescanFromId);
   const upload = useUploadScan();
-  const [form, setForm] = useState<OptionsFormValue>(EMPTY_FORM);
+  const rescan = useRescanScan();
+  const [form, setForm] = useState<OptionsFormValue>(() => {
+    if (rescanState?.rescanOptions) {
+      return {
+        ...EMPTY_FORM,
+        options: { ...DEFAULT_OPTIONS, ...rescanState.rescanOptions, mode: "manual" },
+      };
+    }
+    return EMPTY_FORM;
+  });
   const [projectIdFile, setProjectIdFile] = useState<File | null>(null);
   const [privateKeyFile, setPrivateKeyFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +56,9 @@ export function ManualScanPage() {
   const optionError = scanOptionError(
     projectIdFile && !o.project_ids ? { ...o, project_ids: "from_file" } : o,
   );
-  const canSubmit = hasProjectIds && !upload.isPending && !optionError;
+  const canSubmit = isRescan
+    ? hasProjectIds && !rescan.isPending && !optionError
+    : hasProjectIds && !upload.isPending && !optionError;
 
   const submit = async () => {
     if (!hasProjectIds) return;
@@ -47,6 +69,18 @@ export function ManualScanPage() {
         setError(msg);
         return;
       }
+    }
+    if (isRescan) {
+      try {
+        const scan = await rescan.mutateAsync({
+          id: rescanState!.rescanFromId,
+          options: form.options,
+        });
+        navigate(`/scans/${scan.id}`);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : "Rescan failed");
+      }
+      return;
     }
     try {
       const scan = await upload.mutateAsync({
@@ -68,10 +102,13 @@ export function ManualScanPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Manual scan</h1>
+        <h1 className="text-xl font-semibold tracking-tight">
+          {isRescan ? "Rescan with new settings" : "Manual scan"}
+        </h1>
         <p className="mt-1 text-sm text-ink-400">
-          Provide Firebase identifiers directly — useful when you already
-          extracted them from a web app or a bug-bounty report.
+          {isRescan
+            ? "Identifiers and options are prefilled from the original scan. Adjust whatever you want before re-running."
+            : "Provide Firebase identifiers directly — useful when you already extracted them from a web app or a bug-bounty report."}
         </p>
       </div>
 
@@ -183,7 +220,7 @@ export function ManualScanPage() {
       <OptionsForm
         value={form}
         onChange={setForm}
-        disabled={upload.isPending}
+        disabled={upload.isPending || rescan.isPending}
         showServiceAccount
         privateKeyFile={privateKeyFile}
         onPrivateKeyFileChange={setPrivateKeyFile}
@@ -197,9 +234,11 @@ export function ManualScanPage() {
       {error && <p className="text-sm text-severity-public">{error}</p>}
 
       <div className="flex items-center justify-end gap-3">
-        {upload.isPending && <span className="text-sm text-ink-400">Submitting…</span>}
+        {(upload.isPending || rescan.isPending) && (
+          <span className="text-sm text-ink-400">Submitting…</span>
+        )}
         <Button onClick={submit} disabled={!canSubmit}>
-          Start scan
+          {isRescan ? "Rescan" : "Start scan"}
         </Button>
       </div>
     </div>

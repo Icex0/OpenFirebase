@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Tooltip } from "@/components/ui/Tooltip";
 
+import { RescanDialog } from "./components/RescanDialog";
 import { ScanSettingsButton } from "./components/ScanSettingsButton";
 import { cn } from "@/lib/cn";
 import type { ScanSummary } from "@/lib/types";
@@ -22,16 +23,31 @@ export function ScansListPage() {
   const rescan = useRescanScan();
   const navigate = useNavigate();
   const [pendingDelete, setPendingDelete] = useState<ScanSummary | null>(null);
+  const [pendingRescan, setPendingRescan] = useState<ScanSummary | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("started");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!data) return data;
+    const q = query.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter((s) => {
+      if (s.filename.toLowerCase().includes(q)) return true;
+      const subjects = scanSubjects(s);
+      if (subjects.items.some((it) => it.toLowerCase().includes(q))) return true;
+      if ((s.bundle_filenames ?? []).some((b) => b.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [data, query]);
 
   const sorted = useMemo(() => {
-    if (!data) return data;
-    const arr = [...data];
+    if (!filtered) return filtered;
+    const arr = [...filtered];
     arr.sort((a, b) => cmpScans(a, b, sortKey));
     if (sortDir === "desc") arr.reverse();
     return arr;
-  }, [data, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -69,6 +85,29 @@ export function ScansListPage() {
       )}
 
       {data && data.length > 0 && (
+        <div className="flex min-w-[260px] items-center gap-2 rounded-md border border-ink-700 bg-ink-950/60 px-3 py-1.5 focus-within:border-ink-500">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search filename, project ID, package name…"
+            className="flex-1 bg-transparent font-mono text-xs text-ink-100 placeholder:text-ink-500 focus:outline-none"
+          />
+          {query.trim() && (
+            <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider tabular-nums text-ink-400">
+              {sorted?.length ?? 0} / {data.length}
+            </span>
+          )}
+        </div>
+      )}
+
+      {data && data.length > 0 && sorted && sorted.length === 0 && (
+        <div className="rounded-lg border border-dashed border-ink-700 bg-ink-900/30 px-6 py-10 text-center">
+          <p className="font-mono text-xs text-ink-400">No scans match "{query}".</p>
+        </div>
+      )}
+
+      {data && data.length > 0 && sorted && sorted.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-ink-700/80">
           <table className="w-full text-sm">
             <thead className="bg-ink-900/60 text-left font-mono text-[11px] uppercase tracking-wider text-ink-400">
@@ -116,11 +155,7 @@ export function ScansListPage() {
                           s.status === "queued" ||
                           s.status === "running"
                         }
-                        onClick={() =>
-                          rescan.mutate(s.id, {
-                            onSuccess: (next) => navigate(`/scans/${next.id}`),
-                          })
-                        }
+                        onClick={() => setPendingRescan(s)}
                       >
                         Rescan
                       </Button>
@@ -139,6 +174,40 @@ export function ScansListPage() {
           </table>
         </div>
       )}
+
+      <RescanDialog
+        open={pendingRescan !== null}
+        filename={pendingRescan?.filename ?? ""}
+        loading={rescan.isPending}
+        onCancel={() => setPendingRescan(null)}
+        onSame={() => {
+          if (!pendingRescan) return;
+          const target = pendingRescan;
+          rescan.mutate(
+            { id: target.id },
+            {
+              onSuccess: (next) => {
+                setPendingRescan(null);
+                navigate(`/scans/${next.id}`);
+              },
+            },
+          );
+        }}
+        onChange={() => {
+          if (!pendingRescan) return;
+          const mode = pendingRescan.options?.mode === "manual" ? "manual" : "bundle";
+          const path = mode === "manual" ? "/scans/new/manual" : "/scans/new/bundle";
+          navigate(path, {
+            state: {
+              rescanFromId: pendingRescan.id,
+              rescanFilename: pendingRescan.filename,
+              rescanBundleFilenames: pendingRescan.bundle_filenames ?? [],
+              rescanOptions: pendingRescan.options ?? {},
+            },
+          });
+          setPendingRescan(null);
+        }}
+      />
 
       <ConfirmDialog
         open={pendingDelete !== null}

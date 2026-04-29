@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import uuid
-from typing import Annotated, Callable
+from typing import Annotated, Callable, Literal
 
 from fastapi import (
     APIRouter,
@@ -29,7 +29,7 @@ from ..storage.minio_client import (
     delete_object,
     put_object,
 )
-from .models import Scan, ScanBundle, ScanLog
+from .models import Finding, Scan, ScanBundle, ScanLog, ScanProject
 from .pubsub import bus
 from .repository import ScanRepository
 from .schemas import (
@@ -37,6 +37,8 @@ from .schemas import (
     LogLine,
     ProbeResult,
     ProjectRead,
+    RescanRequest,
+    ResponseBodyRead,
     ScanDetail,
     ScanOptions,
     ScanSummary,
@@ -237,6 +239,53 @@ async def get_scan(
     return _serialize(scan)
 
 
+@router.get(
+    "/{scan_id}/findings/{finding_id}/body",
+    response_model=ResponseBodyRead,
+)
+async def get_finding_body(
+    scan_id: uuid.UUID,
+    finding_id: uuid.UUID,
+    probe: Literal["unauth", "auth"] = Query("unauth"),
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> ResponseBodyRead:
+    """Lazy-load a single probe's response body.
+
+    Bodies are kept in ``Finding.raw`` (JSONB, TOASTed by Postgres) so the
+    detail endpoint can omit them — Remote Config payloads are routinely
+    100s of KB and would otherwise bloat every scan-detail fetch.
+    """
+    # Single round-trip that also verifies scan ownership.
+    stmt = (
+        select(Finding.raw)
+        .join(ScanProject, Finding.project_pk == ScanProject.id)
+        .join(Scan, ScanProject.scan_id == Scan.id)
+        .where(
+            Finding.id == finding_id,
+            ScanProject.scan_id == scan_id,
+            Scan.user_id == user.id,
+        )
+    )
+    raw = await session.scalar(stmt)
+    if raw is None:
+        # Either the finding doesn't exist, doesn't belong to that scan, or
+        # the scan isn't owned by this user — collapse all three into 404 so
+        # we don't leak existence.
+        raise HTTPException(404, "Finding not found")
+
+    block = raw.get(probe) or {}
+    full = block.get("response_content_full")
+    short = block.get("response_content")
+    if full:
+        return ResponseBodyRead(content=full, truncated=full.endswith("...[truncated]"))
+    if short:
+        # Legacy rows captured before lazy bodies — surface what we have and
+        # mark it truncated since the scanner cap (200 chars) was applied.
+        return ResponseBodyRead(content=short, truncated=True)
+    raise HTTPException(404, "No response body captured for this probe")
+
+
 @router.get("/{scan_id}/logs", response_model=list[LogLine])
 async def list_logs(
     scan_id: uuid.UUID,
@@ -353,9 +402,13 @@ async def stream_scan(
     )
 
 
+def _has_body(block: dict) -> bool:
+    return bool(block.get("response_content_full") or block.get("response_content"))
+
+
 def _finding_read(f) -> FindingRead:
-    """Build a FindingRead, pulling response_content/identity from the
-    cached raw payload (those aren't normalised into columns)."""
+    """Build a FindingRead. Response bodies are NOT inlined — clients fetch
+    them lazily per-finding to keep the detail payload small."""
     raw = f.raw or {}
     raw_unauth = raw.get("unauth") or {}
     raw_auth = raw.get("auth") or {}
@@ -369,7 +422,7 @@ def _finding_read(f) -> FindingRead:
             security=f.unauth_security,
             verdict=f.unauth_verdict,
             message=f.unauth_message,
-            response_content=raw_unauth.get("response_content"),
+            has_body=_has_body(raw_unauth),
         ),
         auth=(
             ProbeResult(
@@ -377,7 +430,7 @@ def _finding_read(f) -> FindingRead:
                 security=f.auth_security,
                 verdict=f.auth_verdict,
                 message=f.auth_message,
-                response_content=raw_auth.get("response_content"),
+                has_body=_has_body(raw_auth),
                 identity=raw_auth.get("identity"),
             )
             if f.auth_verdict
@@ -483,23 +536,44 @@ _UPLOAD_SLOTS = (
 @router.post("/{scan_id}/rescan", response_model=ScanSummary, status_code=status.HTTP_201_CREATED)
 async def rescan(
     scan_id: uuid.UUID,
+    body: RescanRequest = RescanRequest(),
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_session),
 ) -> ScanSummary:
     """Clone an existing scan: copy its uploads to a new scan_id prefix and
-    enqueue a fresh Scan row. The scanner worker polls and picks it up."""
+    enqueue a fresh Scan row. The scanner worker polls and picks it up.
+
+    If ``new_options`` is supplied (JSON body), the new scan runs with those
+    options instead of the original's. Bundles and auxiliary uploads (wordlists
+    etc.) are preserved either way — a rescan-with-changes only swaps the
+    option set.
+    """
     original = await session.scalar(
         select(Scan).where(Scan.id == scan_id, Scan.user_id == user.id)
     )
     if original is None:
         raise HTTPException(404, "Scan not found")
 
+    if body.options is not None:
+        # Mode is intrinsic to which kind of scan was originally run (bundles
+        # vs manual identifiers); flipping it on rescan would leave the new
+        # scan in an inconsistent state.
+        original_mode = (original.options or {}).get("mode", "bundle")
+        if body.options.mode != original_mode:
+            raise HTTPException(
+                400,
+                f"cannot change mode on rescan (original was {original_mode!r})",
+            )
+        options_payload = body.options.to_storable()
+    else:
+        options_payload = original.options
+
     new_scan = Scan(
         user_id=user.id,
         filename=original.filename,
         status="queued",
         stage="queued",
-        options=original.options,
+        options=options_payload,
     )
     session.add(new_scan)
     await session.flush()  # populate new_scan.id before we clone junction rows
