@@ -17,7 +17,21 @@ from urllib.parse import urlparse
 
 from .verdict import derive_auth_verdict, derive_unauth_verdict
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "2.0"
+
+# Categories that live exclusively on the bundle (paired credentials, signing
+# metadata, identifiers). The orchestrator's per-project `extracted_items`
+# pivot uses this set to filter — these never appear as parallel string
+# arrays per project; they live only in the structured bundle fields.
+STRUCTURED_BUNDLE_CATEGORIES = frozenset({
+    "Service_Account_Email",
+    "Service_Account_Project_ID",
+    "Service_Account_Private_Key",
+    "Hardcoded_Private_Key",
+    "APK_Certificate_SHA1",
+    "APK_Package_Name",
+    "IPA_Bundle_ID",
+})
 
 # Maps internal result dict service labels to schema service enum values.
 SERVICE_SLUG = {
@@ -123,7 +137,7 @@ class ScanDocumentBuilder:
                 "used": bool(auth_identities),
                 "identities": auth_identities or [],
             },
-            "extraction": {},
+            "extraction": {"bundles": []},
             "projects": [],
             "summary": {"per_service": {}},
         }
@@ -135,7 +149,7 @@ class ScanDocumentBuilder:
 
     # ---- extraction ----
 
-    def set_bundle(
+    def add_bundle(
         self,
         *,
         bundle_type: str,
@@ -144,35 +158,50 @@ class ScanDocumentBuilder:
         items: List[Tuple[str, str]],
         sha1_signatures: Optional[List[str]] = None,
     ) -> None:
-        """Populate extraction.bundle from a single APK/IPA's extractor output.
+        """Append one APK/IPA's structured fields to extraction.bundles[].
 
         `items` is the raw List[(pattern_name, value)] the extractor emits.
-        Service-account and PEM entries are split out into their own arrays.
+        Only the categories that need per-bundle attribution or credential
+        pairing land here: SAs (paired email/key/project_id), hardcoded PEMs,
+        signing certs, package_name, bundle id. Everything else (Firebase
+        project IDs, API keys, app IDs, database/storage URLs, etc.) is
+        emitted per-project via `projects[].extracted_items` — the canonical
+        source for pattern matches.
         """
-        schema_items: List[Dict[str, str]] = []
         service_accounts: List[Dict[str, str]] = []
         leaked_keys: List[Dict[str, str]] = []
         extracted_sha1: List[str] = []
         extracted_package_name: Optional[str] = None
         extracted_bundle_id: Optional[str] = None
 
-        pending_sa_email: Optional[str] = None
-        pending_sa_project: Optional[str] = None
+        # SA fields arrive as a triple in extractor emission order
+        # (Email → Private_Key → Project_ID). Buffer all three and finalize
+        # when the *next* email starts or the loop ends — finalizing on
+        # private_key would drop the project_id that follows it.
+        pending_email: Optional[str] = None
+        pending_key: Optional[str] = None
+        pending_project: Optional[str] = None
+
+        def _flush_sa() -> None:
+            if pending_email and pending_key:
+                service_accounts.append({
+                    "client_email": pending_email,
+                    "project_id": pending_project or _sa_project_from_email(pending_email),
+                    "private_key": pending_key,
+                })
+
         for pattern_name, value in items:
             if pattern_name == "Service_Account_Email":
-                pending_sa_email = value
-                continue
-            if pattern_name == "Service_Account_Project_ID":
-                pending_sa_project = value
+                _flush_sa()
+                pending_email = value
+                pending_key = None
+                pending_project = None
                 continue
             if pattern_name == "Service_Account_Private_Key":
-                service_accounts.append({
-                    "client_email": pending_sa_email or "",
-                    "project_id": pending_sa_project or _sa_project_from_email(pending_sa_email),
-                    "private_key": value,
-                })
-                pending_sa_email = None
-                pending_sa_project = None
+                pending_key = value
+                continue
+            if pattern_name == "Service_Account_Project_ID":
+                pending_project = value
                 continue
             if pattern_name == "Hardcoded_Private_Key":
                 leaked_keys.append({
@@ -189,24 +218,23 @@ class ScanDocumentBuilder:
             if pattern_name == "IPA_Bundle_ID":
                 extracted_bundle_id = value
                 continue
-            schema_items.append({
-                "type": pattern_name,
-                "value": value,
-            })
+            # All other pattern items (Firebase_Project_ID, Google_API_Key,
+            # etc.) are surfaced per-project via projects[].extracted_items;
+            # we don't duplicate them on the bundle.
+        _flush_sa()
 
         resolved_package = package_name or extracted_package_name or extracted_bundle_id
         bundle_block: Dict[str, Any] = {
             "type": bundle_type,
             "path": path,
             "package_name": resolved_package,
-            "items": schema_items,
             "service_accounts": service_accounts,
             "leaked_private_keys": leaked_keys,
         }
         combined_sha1 = list(sha1_signatures or []) + extracted_sha1
         if combined_sha1:
             bundle_block["signatures"] = {"sha1": combined_sha1}
-        self.doc["extraction"]["bundle"] = bundle_block
+        self.doc["extraction"].setdefault("bundles", []).append(bundle_block)
 
     def set_dns(self, matched_project_ids: Iterable[str]) -> None:
         self.doc["extraction"]["dns"] = {

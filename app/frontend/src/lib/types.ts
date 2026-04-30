@@ -109,10 +109,31 @@ export interface ScanSummary {
   options: Partial<ScanOptions> | null;
 }
 
+export interface ServiceAccountCred {
+  client_email: string;
+  project_id: string;
+  private_key: string;
+  file_path?: string;
+}
+
+export interface LeakedPrivateKey {
+  pem_type: string;
+  pem: string;
+}
+
+export interface ExtractionBundle {
+  type: "apk" | "ipa";
+  path?: string;
+  package_name?: string | null;
+  signatures?: { sha1?: string[] };
+  service_accounts?: ServiceAccountCred[];
+  leaked_private_keys?: LeakedPrivateKey[];
+}
+
 export interface ScanDetail extends ScanSummary {
   schema_version: string | null;
   projects: Project[];
-  raw_document: unknown;
+  raw_document: { extraction?: { bundles?: ExtractionBundle[] } } | null;
 }
 
 export interface LogLine {

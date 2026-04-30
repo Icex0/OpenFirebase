@@ -25,11 +25,11 @@ type FieldId =
   // Auth context
   | "auth.used"
   | "auth.identities"
-  // ``extraction.bundle.*`` is intentionally not exposed: the orchestrator
-  // only calls ``set_bundle()`` in single-file CLI mode, so for the web app
-  // (folder-mode scans) the whole bundle block is always empty. Service
-  // accounts and leaked private keys land in ``project.extracted_items``
-  // instead.
+  // ``extraction.bundles[]`` carries per-bundle structured fields:
+  // ``service_accounts`` (paired client_email/private_key/project_id) and
+  // ``leaked_private_keys`` (PEMs hardcoded in source). These never appear
+  // in ``project.extracted_items`` — that pivot is unpaired strings only.
+  | "extraction.bundles"
   // Summary
   | "summary.per_service"
   // Per project
@@ -75,6 +75,11 @@ const GROUPS: Group[] = [
       { id: "finished_at", label: "finished_at" },
       { id: "auth.used", label: "auth.used" },
       { id: "auth.identities", label: "auth.identities"},
+      {
+        id: "extraction.bundles",
+        label: "extraction.bundles",
+        hint: "Per-bundle service_accounts (paired) and leaked_private_keys.",
+      },
       { id: "summary.per_service", label: "summary.per_service" },
     ],
   },
@@ -332,8 +337,12 @@ function buildFiltered(scan: ScanDetail, sel: Set<FieldId>): FilteredOutput {
   if (sel.has("auth.identities")) auth.identities = rawAuth.identities;
   if (Object.keys(auth).length > 0) out.auth = auth;
 
-  // ``extraction.bundle`` is intentionally not emitted — see the FieldId
-  // comment for the reason (always empty for web/folder-mode scans).
+  if (sel.has("extraction.bundles")) {
+    const rawExtraction = (raw.extraction ?? {}) as Record<string, unknown>;
+    if (Array.isArray(rawExtraction.bundles)) {
+      out.extraction = { bundles: rawExtraction.bundles };
+    }
+  }
 
   // Summary
   if (sel.has("summary.per_service")) {

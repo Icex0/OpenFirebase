@@ -8,8 +8,8 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.1",
-      "description": "Breaking changes increment the major component. 1.1 adds per-project `extracted_items`."
+      "const": "2.0",
+      "description": "Breaking changes increment the major component. 2.0 replaces the singular `extraction.bundle` (object) with `extraction.bundles[]` (array) so multi-bundle scans carry per-bundle structured fields, and removes pattern-matched strings from the bundle entirely — those are surfaced per-project via `projects[].extracted_items`. Bundles now hold only what *requires* per-bundle pairing or attribution: type, path, package_name, signatures, service_accounts, leaked_private_keys."
     },
     "tool_version": {
       "type": "string",
@@ -67,73 +67,47 @@
       "type": "object",
       "description": "What was pulled from the input before scanning.",
       "properties": {
-        "bundle": {
-          "type": "object",
-          "properties": {
-            "type": { "enum": ["apk", "ipa"] },
-            "path": { "type": "string" },
-            "package_name": { "type": "string" },
-            "signatures": {
-              "type": "object",
-              "properties": {
-                "sha1": {
-                  "type": "array",
-                  "items": { "type": "string" },
-                  "description": "One entry per signing certificate (APKs can have multiple)."
-                }
-              }
-            },
-            "items": {
-              "type": "array",
-              "description": "Pattern-matched strings. Feeds the scanner URL list. Pattern names come from firebase_rules.json.",
-              "items": {
+        "bundles": {
+          "type": "array",
+          "description": "One entry per APK/IPA processed. Multi-bundle scans (--app-dir) emit one entry per file; single-file scans emit one entry. The structured `service_accounts` and `leaked_private_keys` arrays preserve credential pairing that the per-project `extracted_items` pivot cannot represent — these credentials are intentionally NOT duplicated into `extracted_items`.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "enum": ["apk", "ipa"] },
+              "path": { "type": "string" },
+              "package_name": { "type": "string" },
+              "signatures": {
                 "type": "object",
-                "required": ["type", "value"],
                 "properties": {
-                  "type": {
-                    "enum": [
-                      "Firebase_Project_ID",
-                      "Google_API_Key",
-                      "Other_Google_API_Key",
-                      "Google_App_ID",
-                      "Other_Google_App_ID",
-                      "Other_Firebase_Project_ID",
-                      "Firebase_Database_US",
-                      "Firebase_Database_Other",
-                      "Firebase_Storage_New",
-                      "Firebase_Storage_Old",
-                      "Firebase_Storage_API",
-                      "Firestore_Collection_Name",
-                      "Cloud_Functions_URL",
-                      "Cloud_Functions_Callable_Name",
-                      "Cloud_Functions_Region"
-                    ]
-                  },
-                  "value": { "type": "string" }
+                  "sha1": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "One entry per signing certificate (APKs can have multiple)."
+                  }
                 }
-              }
-            },
-            "service_accounts": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": ["client_email", "project_id", "private_key"],
-                "properties": {
-                  "client_email": { "type": "string" },
-                  "project_id": { "type": "string" },
-                  "private_key": { "type": "string", "description": "Full PEM." },
-                  "file_path": { "type": "string" }
+              },
+              "service_accounts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["client_email", "project_id", "private_key"],
+                  "properties": {
+                    "client_email": { "type": "string" },
+                    "project_id": { "type": "string" },
+                    "private_key": { "type": "string", "description": "Full PEM." },
+                    "file_path": { "type": "string" }
+                  }
                 }
-              }
-            },
-            "leaked_private_keys": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": ["pem", "pem_type"],
-                "properties": {
-                  "pem_type": { "type": "string", "description": "e.g. 'RSA PRIVATE KEY', 'PRIVATE KEY', 'EC PRIVATE KEY'." },
-                  "pem": { "type": "string" }
+              },
+              "leaked_private_keys": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["pem", "pem_type"],
+                  "properties": {
+                    "pem_type": { "type": "string", "description": "e.g. 'RSA PRIVATE KEY', 'PRIVATE KEY', 'EC PRIVATE KEY'." },
+                    "pem": { "type": "string" }
+                  }
                 }
               }
             }
@@ -162,7 +136,7 @@
 
           "extracted_items": {
             "type": "object",
-            "description": "Per-project pivot of items extracted from the bundle(s) that referenced this project. Keys are pattern names (e.g. Firebase_Project_ID, Google_API_Key); values are deduplicated string arrays. Mirrors the per-package buckets in firebase_items.txt, grouped by project_id.",
+            "description": "Canonical per-project view of pattern-matched strings extracted from the bundle(s) that referenced this project. Keys are pattern names (e.g. Firebase_Project_ID, Google_API_Key); values are deduplicated string arrays. Allowed pattern names: Firebase_Project_ID, Google_API_Key, Other_Google_API_Key, Google_App_ID, Other_Google_App_ID, Other_Firebase_Project_ID, Firebase_Database_US, Firebase_Database_Other, Firebase_Storage_New, Firebase_Storage_Old, Firebase_Storage_API, Firestore_Collection_Name, Cloud_Functions_URL, Cloud_Functions_Callable_Name, Cloud_Functions_Region. Service account credentials and hardcoded private keys are NOT duplicated here — they live only in `extraction.bundles[].service_accounts` / `leaked_private_keys` where pairing is preserved.",
             "additionalProperties": {
               "type": "array",
               "items": { "type": "string" }

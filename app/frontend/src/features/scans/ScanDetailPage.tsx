@@ -7,7 +7,13 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/ui/Surface";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/cn";
-import type { Finding, Project } from "@/lib/types";
+import type {
+  ExtractionBundle,
+  Finding,
+  LeakedPrivateKey,
+  Project,
+  ServiceAccountCred,
+} from "@/lib/types";
 
 import { scanSubjects } from "./defaults";
 import { ExportDialog } from "./components/ExportDialog";
@@ -54,7 +60,57 @@ export function ScanDetailPage() {
     setCollapsed({});
   }, [id]);
 
-  const projects: Project[] = data?.projects ?? [];
+  // Group projects by their primary package, then sort within each group by
+  // project_id. Mirrors the CLI's "per-package then per-project" output so
+  // multi-bundle scans don't interleave projects from different APKs/IPAs.
+  // Manual-mode scans have no package_names — those sort to the end by
+  // project_id alone.
+  const projects: Project[] = useMemo(() => {
+    const xs = [...(data?.projects ?? [])];
+    xs.sort((a, b) => {
+      const pa = a.package_names?.[0] ?? "￿";
+      const pb = b.package_names?.[0] ?? "￿";
+      if (pa !== pb) return pa.localeCompare(pb);
+      return a.project_id.localeCompare(b.project_id);
+    });
+    return xs;
+  }, [data?.projects]);
+
+  // Project-scoped credential rollup. extracted_items is unpaired strings
+  // only (schema 2.0); the structured paired credentials live on
+  // extraction.bundles[]. We re-attribute each bundle to the projects it
+  // referenced via package_name match — same heuristic the backend already
+  // uses to attach package_names to projects.
+  const credsByProject = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        sas: ServiceAccountCred[];
+        leaks: LeakedPrivateKey[];
+        sha1: string[];
+      }
+    >();
+    const bundles: ExtractionBundle[] =
+      data?.raw_document?.extraction?.bundles ?? [];
+    for (const p of projects) {
+      const bag = {
+        sas: [] as ServiceAccountCred[],
+        leaks: [] as LeakedPrivateKey[],
+        sha1: [] as string[],
+      };
+      const pkgs = new Set(p.package_names ?? []);
+      for (const b of bundles) {
+        if (!b.package_name || !pkgs.has(b.package_name)) continue;
+        if (b.service_accounts) bag.sas.push(...b.service_accounts);
+        if (b.leaked_private_keys) bag.leaks.push(...b.leaked_private_keys);
+        for (const s of b.signatures?.sha1 ?? []) {
+          if (!bag.sha1.includes(s)) bag.sha1.push(s);
+        }
+      }
+      map.set(p.id, bag);
+    }
+    return map;
+  }, [data?.raw_document, projects]);
 
   // Distinct option lists derived from the actual findings in this scan.
   const facets = useMemo(() => {
@@ -370,19 +426,29 @@ export function ScanDetailPage() {
         </p>
       )}
 
-      {filteredProjects.map((p) => (
-        <ProjectCard
-          key={p.id}
-          scanId={data.id}
-          project={p}
-          collapsed={!!collapsed[p.id]}
-          onToggle={() =>
-            setCollapsed((c) => ({ ...c, [p.id]: !c[p.id] }))
-          }
-          live={live}
-          view={view}
-        />
-      ))}
+      {filteredProjects.map((p) => {
+        const creds = credsByProject.get(p.id) ?? {
+          sas: [],
+          leaks: [],
+          sha1: [],
+        };
+        return (
+          <ProjectCard
+            key={p.id}
+            scanId={data.id}
+            project={p}
+            serviceAccounts={creds.sas}
+            leakedKeys={creds.leaks}
+            sha1Signatures={creds.sha1}
+            collapsed={!!collapsed[p.id]}
+            onToggle={() =>
+              setCollapsed((c) => ({ ...c, [p.id]: !c[p.id] }))
+            }
+            live={live}
+            view={view}
+          />
+        );
+      })}
 
       <ExportDialog
         open={exportOpen}
@@ -427,6 +493,9 @@ export function ScanDetailPage() {
 function ProjectCard({
   scanId,
   project: p,
+  serviceAccounts,
+  leakedKeys,
+  sha1Signatures,
   collapsed,
   onToggle,
   live,
@@ -434,17 +503,25 @@ function ProjectCard({
 }: {
   scanId: string;
   project: Project;
+  serviceAccounts: ServiceAccountCred[];
+  leakedKeys: LeakedPrivateKey[];
+  sha1Signatures: string[];
   collapsed: boolean;
   onToggle: () => void;
   live: boolean;
   view: ProjectTab;
 }) {
-  const extractedCount = p.extracted_items
-    ? Object.values(p.extracted_items).reduce(
-        (n, v) => n + (Array.isArray(v) ? (v as unknown[]).length : 0),
-        0,
-      )
-    : 0;
+  const extractedCount =
+    (p.extracted_items
+      ? Object.values(p.extracted_items).reduce(
+          (n, v) => n + (Array.isArray(v) ? (v as unknown[]).length : 0),
+          0,
+        )
+      : 0) +
+    serviceAccounts.length +
+    leakedKeys.length +
+    sha1Signatures.length +
+    (p.package_names?.length ?? 0);
   // Per-card tab state. Seeded by the global ``view`` and re-synced
   // whenever the global toggle changes — so the toolbar acts as a
   // "set all" while users can still flip individual cards locally.
@@ -518,7 +595,13 @@ function ProjectCard({
                 )}
               </>
             ) : extractedCount > 0 ? (
-              <ExtractedItems items={p.extracted_items} />
+              <ExtractedItems
+                items={p.extracted_items}
+                serviceAccounts={serviceAccounts}
+                leakedKeys={leakedKeys}
+                packageNames={p.package_names ?? []}
+                sha1Signatures={sha1Signatures}
+              />
             ) : (
               <p className="font-mono text-[11px] uppercase tracking-wider text-ink-400">
                 Nothing was extracted for this project.

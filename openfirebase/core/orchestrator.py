@@ -1813,20 +1813,31 @@ class OpenFirebaseOrchestrator:
             auth_identities=auth_identities or None,
         )
 
-        # Extraction bundle (APK/IPA only, single-file mode).
-        if is_apk_mode and args.file and extraction_results:
-            apk_path = Path(args.file)
-            bundle_type = "ipa" if apk_path.suffix.lower() == ".ipa" else "apk"
-            # extraction_results shape: Dict[package_name, List[(pattern_name, value)]]
-            # For single-file mode there's typically one package_name.
+        # Emit one extraction.bundles[] entry per package — single-file and
+        # --app-dir take the same path so multi-bundle scans don't lose their
+        # structured `service_accounts` / `leaked_private_keys` data.
+        if is_apk_mode and extraction_results:
+            single_apk_path = Path(args.file) if args.file else None
             for package_name, items in extraction_results.items():
-                builder.set_bundle(
+                # Bundle type is iOS only when the items carry an IPA marker —
+                # in --file mode we can also fall back to the file extension.
+                has_ipa_marker = any(t == "IPA_Bundle_ID" for t, _ in items)
+                if has_ipa_marker:
+                    bundle_type = "ipa"
+                elif single_apk_path:
+                    bundle_type = "ipa" if single_apk_path.suffix.lower() == ".ipa" else "apk"
+                else:
+                    bundle_type = "apk"
+                # In --app-dir mode we don't carry per-file paths in the
+                # extraction results dict; the input folder is the best we can
+                # surface without re-walking the directory.
+                bundle_path = str(single_apk_path) if single_apk_path else str(getattr(args, "app_dir", "") or "")
+                builder.add_bundle(
                     bundle_type=bundle_type,
-                    path=str(apk_path),
+                    path=bundle_path,
                     package_name=package_name,
                     items=items,
                 )
-                break  # schema is one bundle per doc
 
         # Build a project_id -> package_names map for per-finding attribution.
         package_names_by_project = {}
@@ -1836,6 +1847,7 @@ class OpenFirebaseOrchestrator:
                     package_names_by_project.setdefault(pid, []).append(package_name)
 
         if extraction_results and package_project_ids:
+            from ..output.json_writer import STRUCTURED_BUNDLE_CATEGORIES
             extracted_by_project: dict[str, dict[str, list[str]]] = {}
             for package_name, items in extraction_results.items():
                 project_ids = package_project_ids.get(package_name) or []
@@ -1844,6 +1856,11 @@ class OpenFirebaseOrchestrator:
                 for pid in project_ids:
                     entry = extracted_by_project.setdefault(pid, {})
                     for category, value in items:
+                        # Credentials and bundle-level metadata live on the
+                        # bundle (paired). Skip them here so the same value
+                        # never appears in two places.
+                        if category in STRUCTURED_BUNDLE_CATEGORIES:
+                            continue
                         bucket = entry.setdefault(category, [])
                         if value not in bucket:
                             bucket.append(value)

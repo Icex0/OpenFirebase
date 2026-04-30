@@ -32,6 +32,21 @@ _PROJECT_ID_CATS = {"Firebase_Project_ID", "Other_Firebase_Project_ID"}
 _MULTILINE_PEM_CATS = {"Service_Account_Private_Key", "Hardcoded_Private_Key"}
 _PEM_END = "-----END PRIVATE KEY-----"
 
+# Categories that the final scan.json moves to ``extraction.bundles[]``
+# rather than per-project ``extracted_items`` (paired credentials, signing
+# metadata, identifiers). We drop them from the mid-run pivot so the UI
+# doesn't show them as raw string buckets and then re-render them with a
+# different shape once the final document arrives.
+_STRUCTURED_BUNDLE_CATS = {
+    "Service_Account_Email",
+    "Service_Account_Project_ID",
+    "Service_Account_Private_Key",
+    "Hardcoded_Private_Key",
+    "APK_Certificate_SHA1",
+    "APK_Package_Name",
+    "IPA_Bundle_ID",
+}
+
 
 def parse_items_file(path: Path) -> list[dict]:
     """Parse an items file and return a list of project dicts:
@@ -122,6 +137,8 @@ def parse_items_file(path: Path) -> list[dict]:
                 entry["package_names"].append(pkg)
             # Merge this package's categories into the project's item pool.
             for cat, values in cats.items():
+                if cat in _STRUCTURED_BUNDLE_CATS:
+                    continue
                 bucket = entry["extracted_items"].setdefault(cat, [])
                 for v in values:
                     if v not in bucket:
