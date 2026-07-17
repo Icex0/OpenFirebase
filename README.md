@@ -314,6 +314,7 @@ When using the `--check-with-auth` option, OpenFirebase attempts to authenticate
 - **Account Creation and sign-in**: Automatically attempts to create Firebase user accounts using the Identity Toolkit API with extracted API keys and fetch access token.
 - **Anonymous sign-in**: If account creation with email/password fails, automatically retries with anonymous sign-in.
 - **Google OAuth sign-in**: If email/password auth is disabled (`OPERATION_NOT_ALLOWED`), falls back to Google OAuth via `signInWithIdp` when `--google-id-token` is provided. Can also be used standalone without email/password. See [Google OAuth Authentication](#google-oauth-authentication).
+- **Multi-tenancy**: Use `--tenantid` (alias `--tenant-id`) to scope authentication to a specific Identity Platform tenant. The value is sent as `tenantId` in the Identity Toolkit request body (sign-up, sign-in, anonymous, and `signInWithIdp`), matching what the app's own sign-in request carries (e.g. `"tenantId":"mytenant-a1b2c"`).
 - **API Key Restriction Bypass**: Bypasses client-side Google API key restrictions by setting the matching headers — `--cert-sha1` + `--package-name` (Android, auto-extracted from APK), `--ios-bundle-id` (iOS), and `--referer` (HTTP referrer). Only IP-address restrictions provide real protection. These bypasses apply to Identity Toolkit (auth) and Remote Config requests, since those are the only Firebase APIs that authenticate via `?key=AIza...` and are therefore subject to API key restrictions.
 - **Multi-Key Testing**: Tests multiple extracted API keys and certificate combinations to find working authentication methods
 - **Authenticated Retry**: Retries previously failed read/write operations using obtained authentication token
@@ -461,6 +462,7 @@ When you already have extracted Firebase project IDs and want to skip the extrac
 | `--email` | `-e` | Email address for Firebase authentication (required with --check-with-auth unless --google-id-token is used) |
 | `--password` | `-p` | Password for Firebase authentication (required with --email) |
 | `--google-id-token` | | Google OAuth ID token for signInWithIdp fallback when email/password auth is disabled (see [Google OAuth Authentication](#google-oauth-authentication)) |
+| `--tenantid` | `--tenant-id` | Identity Platform tenant ID to scope `--check-with-auth` requests to a specific tenant (sent as `tenantId` in the Identity Toolkit request body, e.g. `mytenant-a1b2c`) |
 | `--resume-auth-file` | | Path to auth_data.json file or results directory containing saved authentication data for direct authentication (skips trial-and-error auth process) |
 
 ### Service Account Authentication

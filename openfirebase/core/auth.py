@@ -25,6 +25,7 @@ class FirebaseAuth:
         referer: str = None,
         ios_bundle_id: str = None,
         google_id_token: str = None,
+        tenant_id: str = None,
     ):
         """Initialize Firebase authentication handler.
 
@@ -34,6 +35,7 @@ class FirebaseAuth:
             referer: Value for the Referer header to bypass HTTP referrer API key restrictions
             ios_bundle_id: Value for X-Ios-Bundle-Identifier to bypass iOS-app API key restrictions
             google_id_token: Google OAuth ID token for signInWithIdp fallback when email/password auth is disabled
+            tenant_id: Identity Platform tenant ID to scope Identity Toolkit auth requests to a specific tenant
 
         """
         self.timeout = timeout
@@ -61,6 +63,9 @@ class FirebaseAuth:
 
         # Google OAuth ID token for signInWithIdp fallback
         self._google_id_token = google_id_token
+
+        # Identity Platform tenant ID (added to Identity Toolkit request bodies when set)
+        self._tenant_id = tenant_id
 
         # Store authentication tokens per project
         self._auth_tokens: Dict[str, str] = {}
@@ -275,6 +280,8 @@ class FirebaseAuth:
                 "password": password,
                 "returnSecureToken": True
             }
+            if self._tenant_id:
+                payload["tenantId"] = self._tenant_id
 
             print(f"{BLUE}[AUTH]{RESET} Attempting to create Firebase account for project: {project_id}")
 
@@ -377,6 +384,8 @@ class FirebaseAuth:
                 "identifier": email,
                 "continueUri": "http://localhost"
             }
+            if self._tenant_id:
+                payload["tenantId"] = self._tenant_id
 
             headers = {}
             if package_name:
@@ -444,6 +453,8 @@ class FirebaseAuth:
                 "password": password,
                 "returnSecureToken": True
             }
+            if self._tenant_id:
+                payload["tenantId"] = self._tenant_id
 
             # Prepare headers including Android identification headers
             headers = {}
@@ -521,6 +532,8 @@ class FirebaseAuth:
             payload = {
                 "returnSecureToken": True
             }
+            if self._tenant_id:
+                payload["tenantId"] = self._tenant_id
 
             print(f"{BLUE}[AUTH]{RESET} Trying anonymous sign-in for project: {project_id}")
 
@@ -602,6 +615,8 @@ class FirebaseAuth:
                 "returnIdpCredential": True,
                 "returnSecureToken": True,
             }
+            if self._tenant_id:
+                payload["tenantId"] = self._tenant_id
 
             print(f"{BLUE}[AUTH]{RESET} Trying Google OAuth sign-in for project: {project_id}")
 

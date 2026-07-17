@@ -704,6 +704,12 @@ def main(
         help="Google OAuth ID token for signInWithIdp fallback when email/password auth is disabled (capture from app's Google sign-in flow via intercepting proxy)",
         rich_help_panel="Authentication"
     ),
+    tenant_id: Optional[str] = Option(
+        None,
+        "--tenantid", "--tenant-id",
+        help="Identity Platform tenant ID to scope --check-with-auth requests to a specific tenant (added as tenantId in the Identity Toolkit sign-in/sign-up request body, e.g. mytenant-a1b2c)",
+        rich_help_panel="Authentication"
+    ),
     resume_auth_file: Optional[Path] = Option(
         None,
         "--resume-auth-file",
@@ -826,6 +832,7 @@ def main(
     args.email = email
     args.password = password
     args.google_id_token = google_id_token
+    args.tenant_id = tenant_id
     args.resume_auth_file = str(validated_resume_auth_file) if validated_resume_auth_file else None
     args.exclude_project_id = exclude_project_id
     args.service_account = service_account
